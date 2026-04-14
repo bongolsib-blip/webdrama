@@ -63,11 +63,12 @@ export default function DetailPage() {
 
       {videoUrl && (
         <video
+          key={videoUrl}
           ref={videoRef}
           controls
           autoPlay
           onEnded={handleEnded}
-          style={{ width: "100%", marginTop: 20 }}
+          className="w-full"
         >
           <source src={videoUrl} />
         </video>
