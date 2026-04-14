@@ -19,38 +19,37 @@ export default function DetailPage() {
   const [detail, setDetail] = useState(null);
   const [videoUrl, setVideoUrl] = useState("");
   const [episode, setEpisode] = useState(startEp);
-  const [loadingVideo, setLoadingVideo] = useState(false);
 
+  const [loadingVideo, setLoadingVideo] = useState(false);
   const [showControl, setShowControl] = useState(true);
   const [showHeader, setShowHeader] = useState(true);
+  const [showEpisodeList, setShowEpisodeList] = useState(false);
 
   const videoRef = useRef(null);
   const hideTimeout = useRef(null);
 
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
-  const lastTap = useRef(0);
 
   // ================= LOAD DETAIL =================
   useEffect(() => {
-    if (!slug) return;
-
     fetch(`https://drama-liart.vercel.app/detail?slug=${slug}`)
       .then((r) => r.json())
-      .then((d) => setDetail(d?.data || null));
+      .then((d) => setDetail(d?.data));
   }, [slug]);
 
-  // ================= LOAD EPISODE =================
+  // ================= LOAD VIDEO =================
   const loadEpisode = async (ep) => {
     setEpisode(ep);
     setLoadingVideo(true);
+    setShowEpisodeList(false);
 
     const res = await fetch(
       `https://drama-liart.vercel.app/video?slug=${slug}&ep=${ep}`
     );
     const data = await res.json();
 
-    setVideoUrl(data?.video_url || "");
+    setVideoUrl(data.video_url);
     setLoadingVideo(false);
   };
 
@@ -59,19 +58,6 @@ export default function DetailPage() {
       loadEpisode(startEp);
     }
   }, [detail]);
-
-  // ================= AUTO HIDE =================
-  const triggerAutoHide = () => {
-    setShowControl(true);
-    setShowHeader(true);
-
-    if (hideTimeout.current) clearTimeout(hideTimeout.current);
-
-    hideTimeout.current = setTimeout(() => {
-      setShowControl(false);
-      setShowHeader(false);
-    }, 3000);
-  };
 
   // ================= PLAYER =================
   useEffect(() => {
@@ -83,7 +69,7 @@ export default function DetailPage() {
     video.removeAttribute("src");
     video.load();
 
-    if (videoUrl.includes(".m3u8") && Hls && Hls.isSupported()) {
+    if (videoUrl.includes(".m3u8") && Hls.isSupported()) {
       const hls = new Hls();
       hls.loadSource(videoUrl);
       hls.attachMedia(video);
@@ -92,85 +78,21 @@ export default function DetailPage() {
       video.src = videoUrl;
     }
 
-    // RESUME
-    setTimeout(() => {
-      const key = `progress_${slug}_${episode}`;
-      const saved = localStorage.getItem(key);
-      if (saved) video.currentTime = parseFloat(saved);
-    }, 800);
-
     video.play().catch(() => {});
     triggerAutoHide();
   }, [videoUrl]);
 
-  // ================= AUTO NEXT =================
-  const handleEnded = () => {
-    if (episode < detail.total_episode) {
-      loadEpisode(episode + 1);
-    }
-  };
+  // ================= AUTO HIDE =================
+  const triggerAutoHide = () => {
+    setShowHeader(true);
+    setShowControl(true);
 
-  // ================= SAVE HISTORY =================
-  const saveHistory = () => {
-    if (!slug) return;
+    if (hideTimeout.current) clearTimeout(hideTimeout.current);
 
-    const key = "history_watch";
-    const existing = JSON.parse(localStorage.getItem(key) || "[]");
-
-    const newItem = {
-      slug,
-      episode,
-      time: videoRef.current?.currentTime || 0,
-      updatedAt: Date.now(),
-    };
-
-    const filtered = existing.filter((i) => i.slug !== slug);
-    filtered.unshift(newItem);
-
-    localStorage.setItem(key, JSON.stringify(filtered.slice(0, 20)));
-  };
-
-  // ================= SAVE PROGRESS =================
-  const saveProgress = () => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const key = `progress_${slug}_${episode}`;
-    localStorage.setItem(key, video.currentTime);
-
-    saveHistory();
-  };
-
-  useEffect(() => {
-    const interval = setInterval(saveProgress, 5000);
-    return () => clearInterval(interval);
-  }, [episode, videoUrl]);
-
-  useEffect(() => {
-    const handleBeforeUnload = () => saveProgress();
-    window.addEventListener("beforeunload", handleBeforeUnload);
-
-    return () =>
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [episode, videoUrl]);
-
-  // ================= DOUBLE TAP =================
-  const handleDoubleTap = (e) => {
-    const now = Date.now();
-    const diff = now - lastTap.current;
-
-    if (diff < 300) {
-      const video = videoRef.current;
-      if (!video) return;
-
-      const x = e.nativeEvent.offsetX;
-      const width = video.clientWidth;
-
-      if (x > width / 2) video.currentTime += 10;
-      else video.currentTime -= 10;
-    }
-
-    lastTap.current = now;
+    hideTimeout.current = setTimeout(() => {
+      setShowHeader(false);
+      setShowControl(false);
+    }, 3000);
   };
 
   // ================= SWIPE =================
@@ -191,93 +113,100 @@ export default function DetailPage() {
     }
   };
 
-  if (!detail) return <p style={{ padding: 20 }}>Loading...</p>;
+  if (!detail) return <p>Loading...</p>;
 
   return (
     <div style={container}>
       <div style={playerWrapper}>
         
-        {/* TOP HEADER */}
+        {/* HEADER */}
         <div
           style={{
             ...topBar,
             opacity: showHeader ? 1 : 0,
             transform: showHeader ? "translateY(0)" : "translateY(-20px)",
-            transition: "all 0.3s ease",
-            pointerEvents: showHeader ? "auto" : "none",
+            transition: "all 0.3s",
           }}
         >
           <div style={topGradient}></div>
 
           <div style={topContent}>
-            <button onClick={() => router.back()} style={backBtn}>
+            <button onClick={() => router.back()} style={btn}>
               ◀
             </button>
 
             <div style={titleBox}>
-              <h1 style={titleText}>{detail.title}</h1>
-              <p style={episodeSub}>EP {episode}</p>
+              <p style={title}>{detail.title}</p>
+              <span style={episodeText}>EP {episode}</span>
             </div>
 
-            <div style={{ width: 30 }} />
+            <button onClick={() => setShowEpisodeList(true)} style={btn}>
+              ☰
+            </button>
           </div>
         </div>
 
+        {/* VIDEO */}
         {loadingVideo ? (
-          <div style={loadingBox}>Loading...</div>
+          <div style={loading}>Loading...</div>
         ) : (
-          <>
-            <video
-              ref={videoRef}
-              controls
-              autoPlay
-              muted
-              playsInline
-              onEnded={handleEnded}
-              onClick={(e) => {
-                setShowControl((v) => !v);
-                setShowHeader((v) => !v);
-                handleDoubleTap(e);
-              }}
-              onPlay={triggerAutoHide}
-              onPause={() => {
-                setShowHeader(true);
-                setShowControl(true);
-              }}
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
-              style={videoStyle}
-            />
+          <video
+            ref={videoRef}
+            controls
+            autoPlay
+            playsInline
+            onClick={() => {
+              setShowHeader((v) => !v);
+              setShowControl((v) => !v);
+            }}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            style={video}
+          />
+        )}
 
-            {/* CONTROL BAWAH */}
-            {showControl && (
-              <div style={overlayControl}>
-                <div style={controlInner}>
-                  <button
-                    disabled={episode === 1}
-                    onClick={() => loadEpisode(episode - 1)}
-                    style={navBtn}
-                  >
-                    ◀
-                  </button>
-
-                  <span style={episodeText}>
-                    Ep {episode} / {detail.total_episode}
-                  </span>
-
-                  <button
-                    disabled={episode === detail.total_episode}
-                    onClick={() => loadEpisode(episode + 1)}
-                    style={navBtn}
-                  >
-                    ▶
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
+        {/* CONTROL */}
+        {showControl && (
+          <div style={bottomControl}>
+            <button onClick={() => loadEpisode(episode - 1)}>◀</button>
+            <span>
+              {episode}/{detail.total_episode}
+            </span>
+            <button onClick={() => loadEpisode(episode + 1)}>▶</button>
+          </div>
         )}
       </div>
+
+      {/* EPISODE LIST */}
+      {showEpisodeList && (
+        <div style={episodeOverlay}>
+          <div style={episodeBox}>
+            <h3>Pilih Episode</h3>
+
+            <div style={episodeGrid}>
+              {Array.from({ length: detail.total_episode }).map((_, i) => {
+                const ep = i + 1;
+                return (
+                  <button
+                    key={ep}
+                    onClick={() => loadEpisode(ep)}
+                    style={{
+                      ...episodeBtn,
+                      background: ep === episode ? "#e50914" : "#333",
+                    }}
+                  >
+                    {ep}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button onClick={() => setShowEpisodeList(false)}>
+              Tutup
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -285,34 +214,26 @@ export default function DetailPage() {
 /* STYLE */
 
 const container = {
-  background: "#0f0f0f",
+  background: "#000",
   minHeight: "100vh",
-  padding: 10,
-  color: "white",
 };
 
 const playerWrapper = {
   position: "relative",
-  maxWidth: 900,
-  margin: "0 auto",
 };
 
-const videoStyle = {
+const video = {
   width: "100%",
-  maxHeight: "80vh",
-  objectFit: "contain",
-  background: "black",
-  borderRadius: 10,
+  height: "70vh", // 🔥 lebih tinggi di HP
+  objectFit: "cover",
 };
 
-const loadingBox = {
-  height: 250,
+const loading = {
+  height: "70vh",
   display: "flex",
   justifyContent: "center",
   alignItems: "center",
 };
-
-/* HEADER */
 
 const topBar = {
   position: "absolute",
@@ -320,76 +241,69 @@ const topBar = {
   left: 0,
   right: 0,
   height: 60,
-  zIndex: 50,
+  zIndex: 10,
 };
 
 const topGradient = {
   position: "absolute",
   inset: 0,
-  background:
-    "linear-gradient(to bottom, rgba(0,0,0,0.9), rgba(0,0,0,0.4), transparent)",
+  background: "linear-gradient(to bottom, black, transparent)",
 };
 
 const topContent = {
-  position: "relative",
-  zIndex: 2,
   display: "flex",
   alignItems: "center",
-  height: "100%",
-  padding: "0 10px",
+  padding: 10,
 };
 
-const backBtn = {
+const btn = {
   color: "white",
-  background: "transparent",
+  background: "none",
   border: "none",
-  fontSize: 20,
-  marginRight: 10,
+  fontSize: 18,
 };
 
 const titleBox = {
   flex: 1,
-  overflow: "hidden",
+  textAlign: "center",
 };
 
-const titleText = {
+const title = {
   fontSize: 14,
-  whiteSpace: "nowrap",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-};
-
-const episodeSub = {
-  fontSize: 11,
-  opacity: 0.8,
-};
-
-/* CONTROL */
-
-const overlayControl = {
-  position: "absolute",
-  bottom: 60,
-  left: 0,
-  right: 0,
-  display: "flex",
-  justifyContent: "center",
-};
-
-const controlInner = {
-  display: "flex",
-  gap: 10,
-  background: "rgba(0,0,0,0.6)",
-  padding: "6px 12px",
-  borderRadius: 999,
-};
-
-const navBtn = {
-  background: "none",
-  border: "none",
-  color: "white",
-  fontSize: 18,
 };
 
 const episodeText = {
-  fontSize: 14,
+  fontSize: 11,
+};
+
+const bottomControl = {
+  position: "absolute",
+  bottom: 20,
+  width: "100%",
+  display: "flex",
+  justifyContent: "center",
+  gap: 10,
+  color: "white",
+};
+
+const episodeOverlay = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.9)",
+};
+
+const episodeBox = {
+  padding: 20,
+};
+
+const episodeGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(5,1fr)",
+  gap: 10,
+};
+
+const episodeBtn = {
+  padding: 10,
+  color: "white",
+  border: "none",
 };
