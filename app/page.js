@@ -1,37 +1,48 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 
 export default function Home() {
   const [items, setItems] = useState([]);
-  const [featured, setFeatured] = useState(null);
   const [page, setPage] = useState(1);
-  const [hasNext, setHasNext] = useState(false);
+  const [hasNext, setHasNext] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
   const [isSearch, setIsSearch] = useState(false);
 
+  const observer = useRef();
+
+  // 🔥 LOAD DATA
   const loadList = async (p = 1) => {
+    if (loading || !hasNext) return;
+
+    setLoading(true);
+
     const res = await fetch(
       `https://drama-liart.vercel.app/list?page=${p}`
     );
     const data = await res.json();
 
-    const list = data?.data?.items || [];
+    const newItems = data?.data?.items || [];
 
-    setItems(list);
-    setFeatured(list[0]);
+    setItems((prev) => [...prev, ...newItems]);
     setHasNext(data?.data?.has_next || false);
+    setLoading(false);
   };
 
+  // 🔥 SEARCH
   const handleSearch = async () => {
     if (!q) {
       setIsSearch(false);
+      setItems([]);
       setPage(1);
+      setHasNext(true);
       return loadList(1);
     }
 
     setIsSearch(true);
+    setLoading(true);
 
     const res = await fetch(
       `https://drama-liart.vercel.app/search?q=${q}`
@@ -40,10 +51,30 @@ export default function Home() {
 
     setItems(data.items || []);
     setHasNext(false);
+    setLoading(false);
   };
 
+  // 🔥 OBSERVER (AUTO LOAD)
+  const lastItemRef = useCallback(
+    (node) => {
+      if (loading) return;
+      if (observer.current) observer.current.disconnect();
+
+      observer.current = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && hasNext && !isSearch) {
+          setPage((prev) => prev + 1);
+        }
+      });
+
+      if (node) observer.current.observe(node);
+    },
+    [loading, hasNext, isSearch]
+  );
+
   useEffect(() => {
-    if (!isSearch) loadList(page);
+    if (!isSearch) {
+      loadList(page);
+    }
   }, [page, isSearch]);
 
   return (
@@ -67,7 +98,9 @@ export default function Home() {
             onClick={() => {
               setQ("");
               setIsSearch(false);
+              setItems([]);
               setPage(1);
+              setHasNext(true);
               loadList(1);
             }}
             style={btnSecondary}
@@ -77,77 +110,80 @@ export default function Home() {
         </div>
       </div>
 
-      {/* HERO */}
-      {featured && !isSearch && (
-        <div style={heroStyle}>
-          <img src={featured.thumbnail} style={heroImg} />
-          <div style={heroOverlay}>
-            <h2>{featured.title}</h2>
-            <Link href={`/detail/${featured.slug}`}>
-              <button style={btnPrimary}>▶ Play</button>
-            </Link>
-          </div>
-        </div>
-      )}
-
       {/* GRID */}
       <div style={{ padding: 20 }}>
         <div style={gridStyle}>
-          {items.map((item, i) => (
-            <Link key={i} href={`/detail/${item.slug}`} style={{ textDecoration: "none" }}>
-              <div
-                style={cardStyle}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.transform = "scale(1.05)")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.transform = "scale(1)")
-                }
+          {items.map((item, i) => {
+            if (items.length === i + 1) {
+              return (
+                <Link
+                  ref={lastItemRef}
+                  key={i}
+                  href={`/detail/${item.slug}`}
+                  style={{ textDecoration: "none" }}
+                >
+                  <Card item={item} />
+                </Link>
+              );
+            }
+
+            return (
+              <Link
+                key={i}
+                href={`/detail/${item.slug}`}
+                style={{ textDecoration: "none" }}
               >
-                <img src={item.thumbnail} style={imgStyle} />
-
-                <div style={{ padding: 10 }}>
-                  <p style={titleStyle}>{item.title}</p>
-
-                  {item.episode_badge && (
-                    <span style={badgeStyle}>
-                      {item.episode_badge}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </Link>
-          ))}
+                <Card item={item} />
+              </Link>
+            );
+          })}
         </div>
 
-        {/* PAGINATION */}
-        {!isSearch && (
-          <div style={{ marginTop: 30, textAlign: "center" }}>
-            <button
-              disabled={page === 1}
-              onClick={() => setPage((p) => p - 1)}
-              style={btnSecondary}
-            >
-              ⬅ Prev
-            </button>
+        {/* LOADING */}
+        {loading && (
+          <p style={{ textAlign: "center", marginTop: 20 }}>
+            Loading...
+          </p>
+        )}
 
-            <span style={{ margin: "0 15px" }}>Page {page}</span>
-
-            <button
-              disabled={!hasNext}
-              onClick={() => setPage((p) => p + 1)}
-              style={btnSecondary}
-            >
-              Next ➡
-            </button>
-          </div>
+        {!hasNext && !isSearch && (
+          <p style={{ textAlign: "center", marginTop: 20 }}>
+            🎉 Semua data sudah ditampilkan
+          </p>
         )}
       </div>
     </div>
   );
 }
 
-/* STYLE */
+/* ================= CARD ================= */
+
+function Card({ item }) {
+  return (
+    <div
+      style={cardStyle}
+      onMouseEnter={(e) =>
+        (e.currentTarget.style.transform = "scale(1.05)")
+      }
+      onMouseLeave={(e) =>
+        (e.currentTarget.style.transform = "scale(1)")
+      }
+    >
+      <img src={item.thumbnail} style={imgStyle} />
+
+      <div style={{ padding: 10 }}>
+        <p style={titleStyle}>{item.title}</p>
+
+        {item.episode_badge && (
+          <span style={badgeStyle}>{item.episode_badge}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ================= STYLE ================= */
+
 const headerStyle = {
   padding: 20,
   display: "flex",
@@ -160,23 +196,6 @@ const searchInput = {
   borderRadius: 6,
   border: "none",
   marginRight: 10,
-};
-
-const heroStyle = {
-  height: 300,
-  position: "relative",
-};
-
-const heroImg = {
-  width: "100%",
-  height: "100%",
-  objectFit: "cover",
-};
-
-const heroOverlay = {
-  position: "absolute",
-  bottom: 20,
-  left: 20,
 };
 
 const gridStyle = {
