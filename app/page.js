@@ -5,6 +5,7 @@ import Link from "next/link";
 
 export default function Home() {
   const [items, setItems] = useState([]);
+  const [featured, setFeatured] = useState(null);
   const [page, setPage] = useState(1);
   const [hasNext, setHasNext] = useState(false);
   const [q, setQ] = useState("");
@@ -16,7 +17,10 @@ export default function Home() {
     );
     const data = await res.json();
 
-    setItems(data?.data?.items || []);
+    const list = data?.data?.items || [];
+
+    setItems(list);
+    setFeatured(list[0]); // 🔥 hero ambil item pertama
     setHasNext(data?.data?.has_next || false);
   };
 
@@ -35,6 +39,7 @@ export default function Home() {
     const data = await res.json();
 
     setItems(data.items || []);
+    setFeatured(data.items?.[0]);
     setHasNext(false);
   };
 
@@ -43,33 +48,18 @@ export default function Home() {
   }, [page, isSearch]);
 
   return (
-    <div style={{ background: "#0f0f0f", minHeight: "100vh", color: "white" }}>
-      
-      {/* HEADER */}
-      <div style={{
-        padding: "20px",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        borderBottom: "1px solid #222"
-      }}>
-        <h1 style={{ fontSize: 24, fontWeight: "bold" }}>
-          🎬 DramaFlix
-        </h1>
+    <div style={{ background: "#0f0f0f", color: "white", minHeight: "100vh" }}>
 
-        {/* SEARCH */}
+      {/* HEADER */}
+      <div style={headerStyle}>
+        <h1 style={{ fontSize: 24 }}>🎬 DramaFlix</h1>
+
         <div>
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search drama..."
-            style={{
-              padding: "8px 12px",
-              borderRadius: 6,
-              border: "none",
-              outline: "none",
-              marginRight: 10
-            }}
+            placeholder="Search..."
+            style={searchInput}
           />
           <button onClick={handleSearch} style={btnPrimary}>
             Search
@@ -77,21 +67,54 @@ export default function Home() {
         </div>
       </div>
 
-      {/* CONTENT */}
-      <div style={{ padding: 20 }}>
+      {/* HERO */}
+      {featured && (
+        <div style={heroStyle}>
+          <img src={featured.thumbnail} style={heroImg} />
 
-        {/* GRID */}
+          <div style={heroOverlay}>
+            <h2 style={{ fontSize: 28 }}>{featured.title}</h2>
+
+            <Link href={`/detail/${featured.slug}`}>
+              <button style={btnPlay}>▶ Play</button>
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* GRID */}
+      <div style={{ padding: 20 }}>
+        <h2 style={{ marginBottom: 10 }}>Popular Drama</h2>
+
         <div style={gridStyle}>
           {items.map((item, i) => (
-            <Link key={i} href={`/detail/${item.slug}`}>
-              <div style={cardStyle}>
-                <img
-                  src={item.thumbnail}
-                  style={imgStyle}
-                />
+            <Link key={i} href={`/detail/${item.slug}`} style={{ textDecoration: "none" }}>
+              <div
+                style={cardStyle}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.transform = "scale(1.05)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.transform = "scale(1)")
+                }
+              >
+                <div style={{ position: "relative" }}>
+                  <img src={item.thumbnail} style={imgStyle} />
 
-                <div style={overlayStyle}>
-                  <p style={{ fontSize: 14 }}>{item.title}</p>
+                  {/* PLAY OVERLAY */}
+                  <div style={hoverOverlay}>
+                    ▶
+                  </div>
+                </div>
+
+                <div style={{ padding: 10 }}>
+                  <p style={titleStyle}>{item.title}</p>
+
+                  {item.episode_badge && (
+                    <span style={badgeStyle}>
+                      {item.episode_badge}
+                    </span>
+                  )}
                 </div>
               </div>
             </Link>
@@ -127,6 +150,48 @@ export default function Home() {
 
 /* ================= STYLE ================= */
 
+const headerStyle = {
+  padding: 20,
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  borderBottom: "1px solid #222",
+};
+
+const searchInput = {
+  padding: 8,
+  borderRadius: 6,
+  border: "none",
+  marginRight: 10,
+};
+
+const heroStyle = {
+  position: "relative",
+  height: 300,
+};
+
+const heroImg = {
+  width: "100%",
+  height: "100%",
+  objectFit: "cover",
+};
+
+const heroOverlay = {
+  position: "absolute",
+  bottom: 20,
+  left: 20,
+};
+
+const btnPlay = {
+  marginTop: 10,
+  padding: "10px 20px",
+  background: "#e50914",
+  border: "none",
+  color: "white",
+  borderRadius: 6,
+  cursor: "pointer",
+};
+
 const gridStyle = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
@@ -134,25 +199,44 @@ const gridStyle = {
 };
 
 const cardStyle = {
-  position: "relative",
   borderRadius: 10,
   overflow: "hidden",
-  cursor: "pointer",
-  transition: "transform 0.2s",
+  background: "#1a1a1a",
+  transition: "0.2s",
 };
 
 const imgStyle = {
   width: "100%",
-  height: "260px",
+  height: 250,
   objectFit: "cover",
 };
 
-const overlayStyle = {
+const hoverOverlay = {
   position: "absolute",
-  bottom: 0,
+  top: 0,
+  left: 0,
   width: "100%",
-  background: "linear-gradient(to top, rgba(0,0,0,0.9), transparent)",
-  padding: 10,
+  height: "100%",
+  background: "rgba(0,0,0,0.5)",
+  color: "white",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  fontSize: 30,
+  opacity: 0,
+  transition: "0.2s",
+};
+
+const titleStyle = {
+  fontSize: 14,
+  color: "#fff",
+};
+
+const badgeStyle = {
+  fontSize: 12,
+  background: "#e50914",
+  padding: "2px 6px",
+  borderRadius: 4,
 };
 
 const btnPrimary = {
@@ -161,7 +245,6 @@ const btnPrimary = {
   color: "white",
   border: "none",
   borderRadius: 6,
-  cursor: "pointer",
 };
 
 const btnSecondary = {
@@ -170,5 +253,4 @@ const btnSecondary = {
   color: "white",
   border: "none",
   borderRadius: 6,
-  cursor: "pointer",
 };
