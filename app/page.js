@@ -5,154 +5,95 @@ import Link from "next/link";
 
 export default function Home() {
   const [items, setItems] = useState([]);
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [query, setQuery] = useState("");
 
-  const [history, setHistory] = useState([]);
-  const [historyDetail, setHistoryDetail] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [detail, setDetail] = useState(null);
 
   // ================= LOAD LIST =================
-  const fetchData = async (p = 1, q = "") => {
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
     setLoading(true);
 
-    let url = q
-      ? `https://drama-liart.vercel.app/search?q=${q}`
-      : `https://drama-liart.vercel.app/list?page=${p}`;
+    const res = await fetch(
+      "https://drama-liart.vercel.app/list?page=1"
+    );
+    const data = await res.json();
 
-    try {
-      const res = await fetch(url);
-      const data = await res.json();
-
-      const newItems = q ? data.items : data.data?.items;
-
-      if (p === 1) setItems(newItems || []);
-      else setItems((prev) => [...prev, ...(newItems || [])]);
-    } catch (err) {
-      console.log(err);
-    }
-
+    setItems(data.data?.items || []);
     setLoading(false);
   };
 
-  useEffect(() => {
-    fetchData(1);
-  }, []);
+  // ================= OPEN MODAL =================
+  const openDetail = async (item) => {
+    setSelected(item);
+    setDetail(null);
 
-  // ================= INFINITE SCROLL =================
-  useEffect(() => {
-    const handleScroll = () => {
-      if (loading || query) return;
+    const res = await fetch(
+      `https://drama-liart.vercel.app/detail?slug=${item.slug}`
+    );
+    const data = await res.json();
 
-      if (
-        window.innerHeight + window.scrollY >=
-        document.body.offsetHeight - 200
-      ) {
-        const nextPage = page + 1;
-        setPage(nextPage);
-        fetchData(nextPage);
-      }
-    };
-
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [page, loading, query]);
-
-  // ================= SEARCH =================
-  const handleSearch = (e) => {
-    e.preventDefault();
-    setPage(1);
-    fetchData(1, query);
+    setDetail(data.data);
   };
-
-  // ================= LOAD HISTORY =================
-  useEffect(() => {
-    const data = JSON.parse(localStorage.getItem("history_watch") || "[]");
-    setHistory(data);
-  }, []);
-
-  // ================= FETCH DETAIL HISTORY =================
-  useEffect(() => {
-    const fetchHistory = async () => {
-      if (!history.length) return;
-
-      const results = await Promise.all(
-        history.map(async (item) => {
-          try {
-            const res = await fetch(
-              `https://drama-liart.vercel.app/detail?slug=${item.slug}`
-            );
-            const data = await res.json();
-
-            return {
-              ...item,
-              title: data?.data?.title,
-              thumbnail: data?.data?.thumbnail,
-            };
-          } catch {
-            return null;
-          }
-        })
-      );
-
-      setHistoryDetail(results.filter(Boolean));
-    };
-
-    fetchHistory();
-  }, [history]);
 
   return (
     <div style={container}>
       <h1 style={title}>🎬 Drama Streaming</h1>
 
-      {/* SEARCH */}
-      <form onSubmit={handleSearch} style={searchBox}>
-        <input
-          placeholder="Cari drama..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          style={inputStyle}
-        />
-        <button style={searchBtn}>Cari</button>
-      </form>
-
-      {/* CONTINUE WATCHING */}
-      {historyDetail.length > 0 && (
-        <>
-          <h2 style={{ marginBottom: 10 }}>▶ Continue Watching</h2>
-
-          <div style={rowStyle}>
-            {historyDetail.map((item, i) => (
-              <Link
-                key={i}
-                href={`/detail/${item.slug}?ep=${item.episode}`}
-              >
-                <div style={historyCard}>
-                  <img src={item.thumbnail} style={historyImg} />
-                  <div style={historyInfo}>
-                    <p>{item.title}</p>
-                    <span>Ep {item.episode}</span>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </>
-      )}
-
       {/* GRID */}
       <div style={gridStyle}>
         {items.map((item, i) => (
-          <Link key={i} href={`/detail/${item.slug}`}>
-            <div style={cardStyle}>
-              <img src={item.thumbnail} style={imageStyle} />
-              <p style={titleStyle}>{item.title}</p>
-            </div>
-          </Link>
+          <div key={i} onClick={() => openDetail(item)} style={cardStyle}>
+            <img src={item.thumbnail} style={imageStyle} />
+            <p style={titleStyle}>{item.title}</p>
+          </div>
         ))}
       </div>
 
-      {loading && <p style={{ textAlign: "center" }}>Loading...</p>}
+      {loading && <p>Loading...</p>}
+
+      {/* MODAL */}
+      {selected && (
+        <div style={modalOverlay} onClick={() => setSelected(null)}>
+          <div style={modalBox} onClick={(e) => e.stopPropagation()}>
+            
+            {!detail ? (
+              <p>Loading detail...</p>
+            ) : (
+              <>
+                <img src={detail.thumbnail} style={modalImg} />
+
+                <h2>{detail.title}</h2>
+
+                <p style={{ opacity: 0.8 }}>
+                  {detail.description}
+                </p>
+
+                <p style={{ marginTop: 10 }}>
+                  Total Episode: {detail.total_episode}
+                </p>
+
+                <div style={btnGroup}>
+                  <Link href={`/detail/${selected.slug}`}>
+                    <button style={playBtn}>▶ Tonton</button>
+                  </Link>
+
+                  <button
+                    onClick={() => setSelected(null)}
+                    style={closeBtn}
+                  >
+                    Tutup
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -166,27 +107,9 @@ const container = {
   color: "white",
 };
 
-const title = { fontSize: 24, marginBottom: 10 };
-
-const searchBox = {
-  display: "flex",
-  gap: 10,
+const title = {
+  fontSize: 24,
   marginBottom: 15,
-};
-
-const inputStyle = {
-  flex: 1,
-  padding: 10,
-  borderRadius: 8,
-  border: "none",
-};
-
-const searchBtn = {
-  padding: "10px 15px",
-  background: "#e50914",
-  border: "none",
-  color: "white",
-  borderRadius: 8,
 };
 
 const gridStyle = {
@@ -195,7 +118,9 @@ const gridStyle = {
   gap: 12,
 };
 
-const cardStyle = { cursor: "pointer" };
+const cardStyle = {
+  cursor: "pointer",
+};
 
 const imageStyle = {
   width: "100%",
@@ -210,27 +135,55 @@ const titleStyle = {
   color: "#ddd",
 };
 
-/* CONTINUE WATCHING */
-const rowStyle = {
+/* MODAL */
+
+const modalOverlay = {
+  position: "fixed",
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  background: "rgba(0,0,0,0.8)",
   display: "flex",
-  overflowX: "auto",
-  gap: 10,
-  marginBottom: 20,
+  justifyContent: "center",
+  alignItems: "center",
+  zIndex: 1000,
 };
 
-const historyCard = {
-  minWidth: 140,
+const modalBox = {
+  background: "#111",
+  padding: 20,
+  borderRadius: 12,
+  maxWidth: 400,
+  width: "90%",
 };
 
-const historyImg = {
+const modalImg = {
   width: "100%",
-  borderRadius: 8,
-  aspectRatio: "2/3",
-  objectFit: "cover",
+  borderRadius: 10,
+  marginBottom: 10,
 };
 
-const historyInfo = {
-  marginTop: 5,
-  fontSize: 12,
-  color: "#ccc",
+const btnGroup = {
+  display: "flex",
+  gap: 10,
+  marginTop: 15,
+};
+
+const playBtn = {
+  flex: 1,
+  padding: 10,
+  background: "#e50914",
+  color: "white",
+  border: "none",
+  borderRadius: 8,
+};
+
+const closeBtn = {
+  flex: 1,
+  padding: 10,
+  background: "#333",
+  color: "white",
+  border: "none",
+  borderRadius: 8,
 };
