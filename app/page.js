@@ -5,27 +5,51 @@ import Link from "next/link";
 
 export default function Home() {
   const [items, setItems] = useState([]);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
 
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
 
-  // ================= LOAD LIST =================
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  // ================= LOAD DATA =================
+  const fetchData = async (p = 1) => {
     setLoading(true);
 
     const res = await fetch(
-      "https://drama-liart.vercel.app/list?page=1"
+      `https://drama-liart.vercel.app/list?page=${p}`
     );
     const data = await res.json();
 
-    setItems(data.data?.items || []);
+    const newItems = data.data?.items || [];
+
+    if (p === 1) setItems(newItems);
+    else setItems((prev) => [...prev, ...newItems]);
+
     setLoading(false);
   };
+
+  useEffect(() => {
+    fetchData(1);
+  }, []);
+
+  // ================= INFINITE SCROLL FIX =================
+  useEffect(() => {
+    const handleScroll = () => {
+      if (loading || selected) return; // 🔥 disable saat modal buka
+
+      if (
+        window.innerHeight + window.scrollY >=
+        document.body.offsetHeight - 200
+      ) {
+        const next = page + 1;
+        setPage(next);
+        fetchData(next);
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [page, loading, selected]);
 
   // ================= OPEN MODAL =================
   const openDetail = async (item) => {
@@ -54,7 +78,7 @@ export default function Home() {
         ))}
       </div>
 
-      {loading && <p>Loading...</p>}
+      {loading && <p style={{ textAlign: "center" }}>Loading...</p>}
 
       {/* MODAL */}
       {selected && (
@@ -69,13 +93,9 @@ export default function Home() {
 
                 <h2>{detail.title}</h2>
 
-                <p style={{ opacity: 0.8 }}>
-                  {detail.description}
-                </p>
+                <p style={desc}>{detail.description}</p>
 
-                <p style={{ marginTop: 10 }}>
-                  Total Episode: {detail.total_episode}
-                </p>
+                <p>Total Episode: {detail.total_episode}</p>
 
                 <div style={btnGroup}>
                   <Link href={`/detail/${selected.slug}`}>
@@ -135,7 +155,7 @@ const titleStyle = {
   color: "#ddd",
 };
 
-/* MODAL */
+/* MODAL FIX 🔥 */
 
 const modalOverlay = {
   position: "fixed",
@@ -143,19 +163,18 @@ const modalOverlay = {
   left: 0,
   right: 0,
   bottom: 0,
-  background: "rgba(0,0,0,0.8)",
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
+  background: "rgba(0,0,0,0.85)",
+  overflowY: "auto", // 🔥 scroll fix
   zIndex: 1000,
+  padding: 20,
 };
 
 const modalBox = {
   background: "#111",
   padding: 20,
   borderRadius: 12,
-  maxWidth: 400,
-  width: "90%",
+  maxWidth: 500,
+  margin: "40px auto", // 🔥 center + scroll friendly
 };
 
 const modalImg = {
@@ -164,15 +183,25 @@ const modalImg = {
   marginBottom: 10,
 };
 
+const desc = {
+  opacity: 0.8,
+  maxHeight: 150,
+  overflowY: "auto", // 🔥 scroll description
+};
+
 const btnGroup = {
   display: "flex",
   gap: 10,
   marginTop: 15,
+  position: "sticky",
+  bottom: 0,
+  background: "#111",
+  paddingTop: 10,
 };
 
 const playBtn = {
   flex: 1,
-  padding: 10,
+  padding: 12,
   background: "#e50914",
   color: "white",
   border: "none",
@@ -181,7 +210,7 @@ const playBtn = {
 
 const closeBtn = {
   flex: 1,
-  padding: 10,
+  padding: 12,
   background: "#333",
   color: "white",
   border: "none",
