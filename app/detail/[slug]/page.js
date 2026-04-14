@@ -40,6 +40,8 @@ export default function DetailPage() {
 
   // ================= LOAD VIDEO =================
   const loadEpisode = async (ep) => {
+    if (ep < 1 || ep > detail.total_episode) return;
+
     setEpisode(ep);
     setLoadingVideo(true);
     setShowEpisodeList(false);
@@ -69,7 +71,7 @@ export default function DetailPage() {
     video.removeAttribute("src");
     video.load();
 
-    if (videoUrl.includes(".m3u8") && Hls.isSupported()) {
+    if (videoUrl.includes(".m3u8") && Hls && Hls.isSupported()) {
       const hls = new Hls();
       hls.loadSource(videoUrl);
       hls.attachMedia(video);
@@ -84,6 +86,8 @@ export default function DetailPage() {
 
   // ================= AUTO HIDE =================
   const triggerAutoHide = () => {
+    if (showEpisodeList) return;
+
     setShowHeader(true);
     setShowControl(true);
 
@@ -113,7 +117,7 @@ export default function DetailPage() {
     }
   };
 
-  if (!detail) return <p>Loading...</p>;
+  if (!detail) return <p style={{ padding: 20 }}>Loading...</p>;
 
   return (
     <div style={container}>
@@ -126,6 +130,7 @@ export default function DetailPage() {
             opacity: showHeader ? 1 : 0,
             transform: showHeader ? "translateY(0)" : "translateY(-20px)",
             transition: "all 0.3s",
+            pointerEvents: showHeader ? "auto" : "none",
           }}
         >
           <div style={topGradient}></div>
@@ -140,7 +145,13 @@ export default function DetailPage() {
               <span style={episodeText}>EP {episode}</span>
             </div>
 
-            <button onClick={() => setShowEpisodeList(true)} style={btn}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowEpisodeList(true);
+              }}
+              style={btn}
+            >
               ☰
             </button>
           </div>
@@ -168,11 +179,23 @@ export default function DetailPage() {
         {/* CONTROL */}
         {showControl && (
           <div style={bottomControl}>
-            <button onClick={() => loadEpisode(episode - 1)}>◀</button>
+            <button
+              disabled={episode === 1}
+              onClick={() => loadEpisode(episode - 1)}
+            >
+              ◀
+            </button>
+
             <span>
               {episode}/{detail.total_episode}
             </span>
-            <button onClick={() => loadEpisode(episode + 1)}>▶</button>
+
+            <button
+              disabled={episode === detail.total_episode}
+              onClick={() => loadEpisode(episode + 1)}
+            >
+              ▶
+            </button>
           </div>
         )}
       </div>
@@ -201,7 +224,10 @@ export default function DetailPage() {
               })}
             </div>
 
-            <button onClick={() => setShowEpisodeList(false)}>
+            <button
+              onClick={() => setShowEpisodeList(false)}
+              style={{ marginTop: 20 }}
+            >
               Tutup
             </button>
           </div>
@@ -220,16 +246,19 @@ const container = {
 
 const playerWrapper = {
   position: "relative",
+  maxWidth: 900,
+  margin: "0 auto",
 };
 
 const video = {
   width: "100%",
-  height: "70vh", // 🔥 lebih tinggi di HP
-  objectFit: "cover",
+  height: "calc(100vh - 20px)", // 🔥 fullscreen feel
+  objectFit: "contain", // 🔥 FIX portrait
+  background: "black",
 };
 
 const loading = {
-  height: "70vh",
+  height: "calc(100vh - 20px)",
   display: "flex",
   justifyContent: "center",
   alignItems: "center",
@@ -241,7 +270,7 @@ const topBar = {
   left: 0,
   right: 0,
   height: 60,
-  zIndex: 10,
+  zIndex: 50,
 };
 
 const topGradient = {
@@ -284,21 +313,26 @@ const bottomControl = {
   justifyContent: "center",
   gap: 10,
   color: "white",
+  zIndex: 50,
 };
 
 const episodeOverlay = {
   position: "fixed",
   inset: 0,
-  background: "rgba(0,0,0,0.9)",
+  background: "rgba(0,0,0,0.95)",
+  zIndex: 999,
+  overflowY: "auto",
 };
 
 const episodeBox = {
   padding: 20,
+  maxWidth: 600,
+  margin: "0 auto",
 };
 
 const episodeGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(5,1fr)",
+  gridTemplateColumns: "repeat(auto-fill, minmax(60px,1fr))",
   gap: 10,
 };
 
