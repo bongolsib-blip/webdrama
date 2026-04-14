@@ -34,6 +34,16 @@ export default function DetailPage() {
     const data = await res.json();
 
     setVideoUrl(data.video_url);
+    localStorage.setItem(
+      "continue",
+      JSON.stringify([
+        {
+          slug,
+          thumbnail: detail.thumbnail,
+          title: detail.title,
+        },
+      ])
+    );
   };
 
   const handleEnded = () => {
