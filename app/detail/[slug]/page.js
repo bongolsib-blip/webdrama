@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 
 let Hls;
 if (typeof window !== "undefined") {
@@ -11,6 +11,7 @@ if (typeof window !== "undefined") {
 export default function DetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const slug = params?.slug;
   const startEp = parseInt(searchParams.get("ep") || "1");
@@ -19,7 +20,9 @@ export default function DetailPage() {
   const [videoUrl, setVideoUrl] = useState("");
   const [episode, setEpisode] = useState(startEp);
   const [loadingVideo, setLoadingVideo] = useState(false);
+
   const [showControl, setShowControl] = useState(true);
+  const [showHeader, setShowHeader] = useState(true);
 
   const videoRef = useRef(null);
   const hideTimeout = useRef(null);
@@ -60,11 +63,13 @@ export default function DetailPage() {
   // ================= AUTO HIDE =================
   const triggerAutoHide = () => {
     setShowControl(true);
+    setShowHeader(true);
 
     if (hideTimeout.current) clearTimeout(hideTimeout.current);
 
     hideTimeout.current = setTimeout(() => {
       setShowControl(false);
+      setShowHeader(false);
     }, 3000);
   };
 
@@ -82,22 +87,19 @@ export default function DetailPage() {
       const hls = new Hls();
       hls.loadSource(videoUrl);
       hls.attachMedia(video);
-
       return () => hls.destroy();
     } else {
       video.src = videoUrl;
     }
 
-    // 🔥 LOAD RESUME
+    // RESUME
     setTimeout(() => {
       const key = `progress_${slug}_${episode}`;
       const saved = localStorage.getItem(key);
+      if (saved) video.currentTime = parseFloat(saved);
+    }, 800);
 
-      if (saved) {
-        video.currentTime = parseFloat(saved);
-      }
-    }, 1000);
-
+    video.play().catch(() => {});
     triggerAutoHide();
   }, [videoUrl]);
 
@@ -136,16 +138,14 @@ export default function DetailPage() {
     const key = `progress_${slug}_${episode}`;
     localStorage.setItem(key, video.currentTime);
 
-    saveHistory(); // 🔥 WAJIB
+    saveHistory();
   };
 
-  // auto save tiap 5 detik
   useEffect(() => {
     const interval = setInterval(saveProgress, 5000);
     return () => clearInterval(interval);
   }, [episode, videoUrl]);
 
-  // save saat keluar
   useEffect(() => {
     const handleBeforeUnload = () => saveProgress();
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -166,11 +166,8 @@ export default function DetailPage() {
       const x = e.nativeEvent.offsetX;
       const width = video.clientWidth;
 
-      if (x > width / 2) {
-        video.currentTime += 10;
-      } else {
-        video.currentTime -= 10;
-      }
+      if (x > width / 2) video.currentTime += 10;
+      else video.currentTime -= 10;
     }
 
     lastTap.current = now;
@@ -199,6 +196,33 @@ export default function DetailPage() {
   return (
     <div style={container}>
       <div style={playerWrapper}>
+        
+        {/* TOP HEADER */}
+        <div
+          style={{
+            ...topBar,
+            opacity: showHeader ? 1 : 0,
+            transform: showHeader ? "translateY(0)" : "translateY(-20px)",
+            transition: "all 0.3s ease",
+            pointerEvents: showHeader ? "auto" : "none",
+          }}
+        >
+          <div style={topGradient}></div>
+
+          <div style={topContent}>
+            <button onClick={() => router.back()} style={backBtn}>
+              ◀
+            </button>
+
+            <div style={titleBox}>
+              <h1 style={titleText}>{detail.title}</h1>
+              <p style={episodeSub}>EP {episode}</p>
+            </div>
+
+            <div style={{ width: 30 }} />
+          </div>
+        </div>
+
         {loadingVideo ? (
           <div style={loadingBox}>Loading...</div>
         ) : (
@@ -212,15 +236,20 @@ export default function DetailPage() {
               onEnded={handleEnded}
               onClick={(e) => {
                 setShowControl((v) => !v);
+                setShowHeader((v) => !v);
                 handleDoubleTap(e);
               }}
               onPlay={triggerAutoHide}
+              onPause={() => {
+                setShowHeader(true);
+                setShowControl(true);
+              }}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
               style={videoStyle}
             />
 
-            {/* OVERLAY CONTROL */}
+            {/* CONTROL BAWAH */}
             {showControl && (
               <div style={overlayControl}>
                 <div style={controlInner}>
@@ -249,8 +278,6 @@ export default function DetailPage() {
           </>
         )}
       </div>
-
-      <h2 style={{ marginTop: 20 }}>{detail.title}</h2>
     </div>
   );
 }
@@ -278,6 +305,67 @@ const videoStyle = {
   borderRadius: 10,
 };
 
+const loadingBox = {
+  height: 250,
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+};
+
+/* HEADER */
+
+const topBar = {
+  position: "absolute",
+  top: 0,
+  left: 0,
+  right: 0,
+  height: 60,
+  zIndex: 50,
+};
+
+const topGradient = {
+  position: "absolute",
+  inset: 0,
+  background:
+    "linear-gradient(to bottom, rgba(0,0,0,0.9), rgba(0,0,0,0.4), transparent)",
+};
+
+const topContent = {
+  position: "relative",
+  zIndex: 2,
+  display: "flex",
+  alignItems: "center",
+  height: "100%",
+  padding: "0 10px",
+};
+
+const backBtn = {
+  color: "white",
+  background: "transparent",
+  border: "none",
+  fontSize: 20,
+  marginRight: 10,
+};
+
+const titleBox = {
+  flex: 1,
+  overflow: "hidden",
+};
+
+const titleText = {
+  fontSize: 14,
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+const episodeSub = {
+  fontSize: 11,
+  opacity: 0.8,
+};
+
+/* CONTROL */
+
 const overlayControl = {
   position: "absolute",
   bottom: 60,
@@ -304,11 +392,4 @@ const navBtn = {
 
 const episodeText = {
   fontSize: 14,
-};
-
-const loadingBox = {
-  height: 250,
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
 };
