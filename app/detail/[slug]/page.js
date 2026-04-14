@@ -15,7 +15,7 @@ export default function DetailPage() {
 
   const videoRef = useRef(null);
 
-  // ================= LOAD DETAIL =================
+  // LOAD DETAIL
   useEffect(() => {
     if (!slug) return;
 
@@ -24,7 +24,7 @@ export default function DetailPage() {
       .then((d) => setDetail(d.data));
   }, [slug]);
 
-  // ================= LOAD EPISODE =================
+  // LOAD EPISODE
   const loadEpisode = async (ep) => {
     setEpisode(ep);
     setLoadingVideo(true);
@@ -38,14 +38,13 @@ export default function DetailPage() {
     setLoadingVideo(false);
   };
 
-  // ================= AUTO LOAD EP1 =================
   useEffect(() => {
     if (detail?.total_episode) {
       loadEpisode(1);
     }
   }, [detail]);
 
-  // ================= HLS PLAYER =================
+  // HLS PLAYER
   useEffect(() => {
     if (!videoUrl || !videoRef.current) return;
 
@@ -76,7 +75,6 @@ export default function DetailPage() {
     }
   }, [videoUrl]);
 
-  // ================= AUTO NEXT =================
   const handleEnded = () => {
     if (episode < detail.total_episode) {
       loadEpisode(episode + 1);
@@ -102,18 +100,18 @@ export default function DetailPage() {
               style={videoStyle}
             />
 
-            {/* 🎬 PLAYER CONTROL BAR */}
+            {/* CONTROL */}
             <div style={controlBar}>
               <button
                 disabled={episode === 1}
                 onClick={() => loadEpisode(episode - 1)}
                 style={btnControl}
               >
-                ⏮ Prev
+                ⏮
               </button>
 
               <span style={episodeInfo}>
-                Episode {episode} / {detail.total_episode}
+                EP {episode}/{detail.total_episode}
               </span>
 
               <button
@@ -121,7 +119,7 @@ export default function DetailPage() {
                 onClick={() => loadEpisode(episode + 1)}
                 style={btnControl}
               >
-                Next ⏭
+                ⏭
               </button>
             </div>
           </>
@@ -133,11 +131,9 @@ export default function DetailPage() {
         <img src={detail.thumbnail} style={posterStyle} />
 
         <div>
-          <h1>{detail.title}</h1>
+          <h2>{detail.title}</h2>
 
-          <p style={{ color: "#aaa", marginTop: 10 }}>
-            {detail.description}
-          </p>
+          <p style={descStyle}>{detail.description}</p>
 
           <div style={{ marginTop: 10 }}>
             {detail.tags?.map((tag, i) => (
@@ -150,7 +146,7 @@ export default function DetailPage() {
       </div>
 
       {/* EPISODES */}
-      <div style={{ marginTop: 30 }}>
+      <div style={{ marginTop: 25 }}>
         <h3>Episodes</h3>
 
         <div style={episodeGrid}>
@@ -164,7 +160,7 @@ export default function DetailPage() {
                   episode === i + 1 ? "#e50914" : "#1a1a1a",
               }}
             >
-              EP {i + 1}
+              {i + 1}
             </button>
           ))}
         </div>
@@ -179,13 +175,12 @@ const container = {
   background: "#0f0f0f",
   color: "white",
   minHeight: "100vh",
-  padding: 20,
+  padding: "10px",
 };
 
+/* PLAYER */
 const playerWrapper = {
   width: "100%",
-  maxWidth: 900,
-  margin: "auto",
 };
 
 const videoStyle = {
@@ -194,29 +189,21 @@ const videoStyle = {
   background: "black",
 };
 
-const loadingBox = {
-  height: 300,
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
-  background: "#1a1a1a",
-  borderRadius: 10,
-};
-
+/* CONTROL */
 const controlBar = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
-  marginTop: 10,
+  marginTop: 8,
 };
 
 const btnControl = {
-  padding: "8px 12px",
+  padding: "10px",
   background: "#e50914",
   border: "none",
   color: "white",
-  borderRadius: 6,
-  cursor: "pointer",
+  borderRadius: 8,
+  fontSize: 16,
 };
 
 const episodeInfo = {
@@ -224,15 +211,24 @@ const episodeInfo = {
   color: "#ccc",
 };
 
+/* INFO */
 const infoWrapper = {
   display: "flex",
-  gap: 20,
-  marginTop: 20,
+  flexDirection: "column", // 🔥 mobile default
+  gap: 15,
+  marginTop: 15,
 };
 
 const posterStyle = {
-  width: 150,
+  width: "100%",
+  maxWidth: 200,
   borderRadius: 10,
+};
+
+const descStyle = {
+  fontSize: 14,
+  color: "#aaa",
+  marginTop: 8,
 };
 
 const tagStyle = {
@@ -243,16 +239,16 @@ const tagStyle = {
   fontSize: 12,
 };
 
+/* EPISODE */
 const episodeGrid = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 10,
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(50px, 1fr))",
+  gap: 8,
 };
 
 const episodeBtn = {
-  padding: "8px 12px",
+  padding: "10px",
   border: "none",
   color: "white",
   borderRadius: 6,
-  cursor: "pointer",
 };
