@@ -252,3 +252,12 @@ const episodeBtn = {
   color: "white",
   borderRadius: 6,
 };
+const loadingBox = {
+  height: 250,
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  background: "#1a1a1a",
+  borderRadius: 10,
+  color: "#aaa",
+};
