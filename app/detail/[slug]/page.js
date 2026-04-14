@@ -21,8 +21,8 @@ export default function DetailPage() {
   const [episode, setEpisode] = useState(startEp);
 
   const [loadingVideo, setLoadingVideo] = useState(false);
-  const [showControl, setShowControl] = useState(true);
   const [showHeader, setShowHeader] = useState(true);
+  const [showControl, setShowControl] = useState(true);
   const [showEpisodeList, setShowEpisodeList] = useState(false);
 
   const videoRef = useRef(null);
@@ -38,8 +38,17 @@ export default function DetailPage() {
       .then((d) => setDetail(d?.data));
   }, [slug]);
 
-  // ================= LOAD VIDEO =================
+  // ================= AUTO PLAY FIRST EP =================
+  useEffect(() => {
+    if (!detail?.total_episode) return;
+
+    const ep = startEp || 1;
+    loadEpisode(ep);
+  }, [detail]);
+
+  // ================= LOAD EPISODE =================
   const loadEpisode = async (ep) => {
+    if (!detail?.total_episode) return;
     if (ep < 1 || ep > detail.total_episode) return;
 
     setEpisode(ep);
@@ -55,12 +64,6 @@ export default function DetailPage() {
     setLoadingVideo(false);
   };
 
-  useEffect(() => {
-    if (detail?.total_episode) {
-      loadEpisode(startEp);
-    }
-  }, [detail]);
-
   // ================= PLAYER =================
   useEffect(() => {
     if (!videoUrl || !videoRef.current) return;
@@ -71,7 +74,7 @@ export default function DetailPage() {
     video.removeAttribute("src");
     video.load();
 
-    if (videoUrl.includes(".m3u8") && Hls && Hls.isSupported()) {
+    if (videoUrl.includes(".m3u8") && Hls.isSupported()) {
       const hls = new Hls();
       hls.loadSource(videoUrl);
       hls.attachMedia(video);
@@ -84,7 +87,7 @@ export default function DetailPage() {
     triggerAutoHide();
   }, [videoUrl]);
 
-  // ================= AUTO HIDE =================
+  // ================= AUTO HIDE UI =================
   const triggerAutoHide = () => {
     if (showEpisodeList) return;
 
@@ -110,9 +113,9 @@ export default function DetailPage() {
 
     if (Math.abs(diff) < 50) return;
 
-    if (diff > 0 && episode < detail.total_episode) {
+    if (diff > 0) {
       loadEpisode(episode + 1);
-    } else if (diff < 0 && episode > 1) {
+    } else {
       loadEpisode(episode - 1);
     }
   };
@@ -122,7 +125,7 @@ export default function DetailPage() {
   return (
     <div style={container}>
       <div style={playerWrapper}>
-        
+
         {/* HEADER */}
         <div
           style={{
@@ -146,10 +149,7 @@ export default function DetailPage() {
             </div>
 
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowEpisodeList(true);
-              }}
+              onClick={() => setShowEpisodeList(true)}
               style={btn}
             >
               ☰
@@ -179,10 +179,7 @@ export default function DetailPage() {
         {/* CONTROL */}
         {showControl && (
           <div style={bottomControl}>
-            <button
-              disabled={episode === 1}
-              onClick={() => loadEpisode(episode - 1)}
-            >
+            <button onClick={() => loadEpisode(episode - 1)}>
               ◀
             </button>
 
@@ -190,32 +187,43 @@ export default function DetailPage() {
               {episode}/{detail.total_episode}
             </span>
 
-            <button
-              disabled={episode === detail.total_episode}
-              onClick={() => loadEpisode(episode + 1)}
-            >
+            <button onClick={() => loadEpisode(episode + 1)}>
               ▶
             </button>
           </div>
         )}
       </div>
 
-      {/* EPISODE LIST */}
+      {/* ================= EPISODE NETFLIX SHEET ================= */}
       {showEpisodeList && (
-        <div style={episodeOverlay}>
-          <div style={episodeBox}>
-            <h3>Pilih Episode</h3>
+        <div
+          style={episodeOverlay}
+          onClick={() => setShowEpisodeList(false)}
+        >
+          <div
+            style={episodeBox}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ color: "white" }}>Pilih Episode</h3>
 
             <div style={episodeGrid}>
               {Array.from({ length: detail.total_episode }).map((_, i) => {
                 const ep = i + 1;
+
                 return (
                   <button
                     key={ep}
-                    onClick={() => loadEpisode(ep)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      loadEpisode(ep);
+                      setShowEpisodeList(false);
+                    }}
                     style={{
                       ...episodeBtn,
-                      background: ep === episode ? "#e50914" : "#333",
+                      background:
+                        ep === episode ? "#e50914" : "#2a2a2a",
+                      transform:
+                        ep === episode ? "scale(1.05)" : "scale(1)",
                     }}
                   >
                     {ep}
@@ -223,13 +231,6 @@ export default function DetailPage() {
                 );
               })}
             </div>
-
-            <button
-              onClick={() => setShowEpisodeList(false)}
-              style={{ marginTop: 20 }}
-            >
-              Tutup
-            </button>
           </div>
         </div>
       )}
@@ -237,7 +238,7 @@ export default function DetailPage() {
   );
 }
 
-/* STYLE */
+/* ================= STYLE ================= */
 
 const container = {
   background: "#000",
@@ -252,17 +253,20 @@ const playerWrapper = {
 
 const video = {
   width: "100%",
-  height: "calc(100vh - 20px)", // 🔥 fullscreen feel
-  objectFit: "contain", // 🔥 FIX portrait
+  height: "calc(100vh - 10px)", // 🔥 almost fullscreen
+  objectFit: "contain", // 🔥 fix portrait
   background: "black",
 };
 
 const loading = {
-  height: "calc(100vh - 20px)",
+  height: "80vh",
   display: "flex",
   justifyContent: "center",
   alignItems: "center",
+  color: "white",
 };
+
+/* HEADER */
 
 const topBar = {
   position: "absolute",
@@ -283,12 +287,13 @@ const topContent = {
   display: "flex",
   alignItems: "center",
   padding: 10,
+  color: "white",
 };
 
 const btn = {
-  color: "white",
   background: "none",
   border: "none",
+  color: "white",
   fontSize: 18,
 };
 
@@ -305,6 +310,8 @@ const episodeText = {
   fontSize: 11,
 };
 
+/* CONTROL */
+
 const bottomControl = {
   position: "absolute",
   bottom: 20,
@@ -316,28 +323,39 @@ const bottomControl = {
   zIndex: 50,
 };
 
+/* EPISODE NETFLIX SHEET */
+
 const episodeOverlay = {
   position: "fixed",
   inset: 0,
-  background: "rgba(0,0,0,0.95)",
-  zIndex: 999,
-  overflowY: "auto",
+  background: "rgba(0,0,0,0.6)",
+  zIndex: 999999,
+  display: "flex",
+  alignItems: "flex-end",
 };
 
 const episodeBox = {
-  padding: 20,
-  maxWidth: 600,
-  margin: "0 auto",
+  width: "100%",
+  maxHeight: "75vh",
+  background: "#141414",
+  borderTopLeftRadius: 16,
+  borderTopRightRadius: 16,
+  padding: 16,
+  overflowY: "auto",
 };
 
 const episodeGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(60px,1fr))",
+  gridTemplateColumns: "repeat(5, 1fr)",
   gap: 10,
+  marginTop: 10,
 };
 
 const episodeBtn = {
-  padding: 10,
-  color: "white",
+  padding: 12,
+  borderRadius: 8,
   border: "none",
+  color: "white",
+  cursor: "pointer",
+  transition: "0.2s",
 };
