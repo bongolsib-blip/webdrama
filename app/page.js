@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Row from "@/components/Row";
+import Row from "./components/Row";
 
 export default function Home() {
   const [items, setItems] = useState([]);
