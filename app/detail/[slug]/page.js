@@ -14,27 +14,25 @@ export default function PlayerPage() {
   const [detail, setDetail] = useState(null);
   const [videoUrl, setVideoUrl] = useState("");
   const [episode, setEpisode] = useState(startEp);
-  const [showEpisodeList, setShowEpisodeList] = useState(false);
+  const [showList, setShowList] = useState(false);
 
   const videoRef = useRef(null);
 
-  // ================= FETCH DETAIL =================
+  // FETCH DETAIL
   useEffect(() => {
     fetch(`https://drama-liart.vercel.app/detail?slug=${slug}`)
-      .then((res) => res.json())
-      .then((res) => setDetail(res.data));
+      .then((r) => r.json())
+      .then((r) => setDetail(r.data));
   }, [slug]);
 
-  // ================= AUTO PLAY FIRST EP =================
+  // AUTO PLAY FIRST EP
   useEffect(() => {
     if (!detail?.total_episode) return;
     loadEpisode(startEp || 1);
   }, [detail]);
 
-  // ================= LOAD EPISODE =================
   const loadEpisode = async (ep) => {
     if (!detail) return;
-    if (ep < 1 || ep > detail.total_episode) return;
 
     setEpisode(ep);
 
@@ -46,23 +44,18 @@ export default function PlayerPage() {
     setVideoUrl(data.video_url);
   };
 
-  // ================= VIDEO HANDLER =================
+  // VIDEO LOAD
   useEffect(() => {
     if (!videoUrl || !videoRef.current) return;
 
     const video = videoRef.current;
-
-    video.pause();
     video.src = videoUrl;
     video.load();
-
     video.play().catch(() => {});
   }, [videoUrl]);
 
-  // ================= AUTO NEXT EPISODE =================
-  const handleEnded = () => {
-    if (!detail) return;
-
+  // AUTO NEXT
+  const handleEnd = () => {
     if (episode < detail.total_episode) {
       loadEpisode(episode + 1);
     }
@@ -70,125 +63,172 @@ export default function PlayerPage() {
 
   if (!detail) {
     return (
-      <div className="fixed inset-0 bg-black text-white flex items-center justify-center">
+      <div style={styles.loading}>
         Loading...
       </div>
     );
   }
 
   return (
-    <main className="fixed inset-0 bg-black flex flex-col">
+    <div style={styles.page}>
 
-      {/* ================= HEADER ================= */}
-      <div className="absolute top-0 left-0 right-0 z-40 h-16 pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-b from-black/90 via-black/50 to-transparent" />
+      {/* HEADER */}
+      <div style={styles.header}>
+        <button onClick={() => router.back()} style={styles.btn}>
+          ←
+        </button>
 
-        <div className="relative z-10 flex items-center justify-between h-full px-4 pointer-events-auto">
-
-          <button onClick={() => router.back()} className="text-white text-xl">
-            ←
-          </button>
-
-          <div className="text-center flex-1">
-            <h1 className="text-white text-sm truncate">
-              {detail.title}
-            </h1>
-            <p className="text-white/70 text-xs">
-              EP {episode} / {detail.total_episode}
-            </p>
+        <div style={{ textAlign: "center", flex: 1 }}>
+          <div style={styles.title}>{detail.title}</div>
+          <div style={styles.sub}>
+            EP {episode} / {detail.total_episode}
           </div>
-
-          <button
-            onClick={() => setShowEpisodeList(true)}
-            className="text-white text-xl"
-          >
-            ☰
-          </button>
-
         </div>
+
+        <button onClick={() => setShowList(true)} style={styles.btn}>
+          ☰
+        </button>
       </div>
 
-      {/* ================= VIDEO ================= */}
-      <div className="flex-1 flex items-center justify-center bg-black">
-        <video
-          ref={videoRef}
-          controls
-          autoPlay
-          playsInline
-          onEnded={handleEnded}   // 🔥 AUTO NEXT HERE
-          className="w-full h-full object-contain"
-        />
+      {/* VIDEO */}
+      <video
+        ref={videoRef}
+        controls
+        autoPlay
+        onEnded={handleEnd}
+        style={styles.video}
+      />
+
+      {/* CONTROL */}
+      <div style={styles.control}>
+        <button onClick={() => loadEpisode(episode - 1)}>◀</button>
+        <span style={{ color: "white" }}>
+          {episode}/{detail.total_episode}
+        </span>
+        <button onClick={() => loadEpisode(episode + 1)}>▶</button>
       </div>
 
-      {/* ================= CONTROL ================= */}
-      <div className="absolute bottom-10 left-0 right-0 z-40 flex justify-center pointer-events-none">
-        <div className="flex items-center gap-4 bg-black/60 px-4 py-2 rounded-full pointer-events-auto">
+      {/* EPISODE LIST */}
+      {showList && (
+        <div style={styles.overlay} onClick={() => setShowList(false)}>
+          <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
+            {Array.from({ length: detail.total_episode }).map((_, i) => {
+              const ep = i + 1;
 
-          <button
-            onClick={() => loadEpisode(episode - 1)}
-            disabled={episode === 1}
-            className="text-white disabled:opacity-30"
-          >
-            ◀
-          </button>
-
-          <span className="text-white text-sm">
-            Ep {episode} / {detail.total_episode}
-          </span>
-
-          <button
-            onClick={() => loadEpisode(episode + 1)}
-            disabled={episode === detail.total_episode}
-            className="text-white disabled:opacity-30"
-          >
-            ▶
-          </button>
-
-        </div>
-      </div>
-
-      {/* ================= EPISODE LIST ================= */}
-      {showEpisodeList && (
-        <div
-          className="fixed inset-0 bg-black/80 z-50 flex items-end"
-          onClick={() => setShowEpisodeList(false)}
-        >
-          <div
-            className="w-full max-h-[75vh] bg-[#141414] rounded-t-2xl p-4 overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-
-            <h2 className="text-white mb-3 text-lg">
-              Pilih Episode
-            </h2>
-
-            <div className="grid grid-cols-5 gap-2">
-              {Array.from({ length: detail.total_episode }).map((_, i) => {
-                const ep = i + 1;
-
-                return (
-                  <button
-                    key={ep}
-                    onClick={() => {
-                      loadEpisode(ep);
-                      setShowEpisodeList(false);
-                    }}
-                    className={`p-2 rounded text-white text-sm ${
-                      ep === episode
-                        ? "bg-red-600"
-                        : "bg-gray-800 hover:bg-gray-700"
-                    }`}
-                  >
-                    {ep}
-                  </button>
-                );
-              })}
-            </div>
-
+              return (
+                <button
+                  key={ep}
+                  onClick={() => {
+                    loadEpisode(ep);
+                    setShowList(false);
+                  }}
+                  style={{
+                    ...styles.epBtn,
+                    background: ep === episode ? "red" : "#333",
+                  }}
+                >
+                  {ep}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
 
-    </main>
+    </div>
   );
 }
+
+/* ================= STYLE ================= */
+
+const styles = {
+  page: {
+    position: "fixed",
+    inset: 0,
+    background: "black",
+    display: "flex",
+    flexDirection: "column",
+  },
+
+  header: {
+    height: 60,
+    display: "flex",
+    alignItems: "center",
+    padding: 10,
+    color: "white",
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    background: "linear-gradient(to bottom, rgba(0,0,0,0.8), transparent)",
+  },
+
+  btn: {
+    background: "none",
+    border: "none",
+    color: "white",
+    fontSize: 20,
+  },
+
+  title: {
+    fontSize: 14,
+    color: "white",
+  },
+
+  sub: {
+    fontSize: 12,
+    color: "#aaa",
+  },
+
+  video: {
+    width: "100%",
+    height: "100vh",
+    objectFit: "contain",
+    background: "black",
+  },
+
+  control: {
+    position: "absolute",
+    bottom: 20,
+    width: "100%",
+    display: "flex",
+    justifyContent: "center",
+    gap: 20,
+    color: "white",
+  },
+
+  overlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.8)",
+    display: "flex",
+    alignItems: "flex-end",
+  },
+
+  sheet: {
+    width: "100%",
+    maxHeight: "70vh",
+    background: "#111",
+    padding: 10,
+    display: "grid",
+    gridTemplateColumns: "repeat(5, 1fr)",
+    gap: 10,
+  },
+
+  epBtn: {
+    padding: 10,
+    color: "white",
+    border: "none",
+    borderRadius: 6,
+  },
+
+  loading: {
+    color: "white",
+    background: "black",
+    height: "100vh",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+};
