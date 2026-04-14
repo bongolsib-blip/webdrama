@@ -1,246 +1,179 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 export default function Home() {
   const [items, setItems] = useState([]);
   const [page, setPage] = useState(1);
-  const [hasNext, setHasNext] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [q, setQ] = useState("");
-  const [isSearch, setIsSearch] = useState(false);
+  const [query, setQuery] = useState("");
 
-  const observer = useRef();
-
-  // 🔥 LOAD DATA
-  const loadList = async (p = 1) => {
-    if (loading || !hasNext) return;
-
+  // ================= LOAD DATA =================
+  const fetchData = async (p = 1, q = "") => {
     setLoading(true);
 
-    const res = await fetch(
-      `https://drama-liart.vercel.app/list?page=${p}`
-    );
-    const data = await res.json();
+    let url = "";
 
-    const newItems = data?.data?.items || [];
-
-    setItems((prev) => [...prev, ...newItems]);
-    setHasNext(data?.data?.has_next || false);
-    setLoading(false);
-  };
-
-  // 🔥 SEARCH
-  const handleSearch = async () => {
-    if (!q) {
-      setIsSearch(false);
-      setItems([]);
-      setPage(1);
-      setHasNext(true);
-      return loadList(1);
+    if (q) {
+      url = `https://drama-liart.vercel.app/search?q=${q}`;
+    } else {
+      url = `https://drama-liart.vercel.app/list?page=${p}`;
     }
 
-    setIsSearch(true);
-    setLoading(true);
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
 
-    const res = await fetch(
-      `https://drama-liart.vercel.app/search?q=${q}`
-    );
-    const data = await res.json();
+      const newItems = q ? data.items : data.data?.items;
 
-    setItems(data.items || []);
-    setHasNext(false);
+      if (p === 1) {
+        setItems(newItems || []);
+      } else {
+        setItems((prev) => [...prev, ...(newItems || [])]);
+      }
+    } catch (err) {
+      console.log(err);
+    }
+
     setLoading(false);
   };
 
-  // 🔥 OBSERVER (AUTO LOAD)
-  const lastItemRef = useCallback(
-    (node) => {
-      if (loading) return;
-      if (observer.current) observer.current.disconnect();
-
-      observer.current = new IntersectionObserver((entries) => {
-        if (entries[0].isIntersecting && hasNext && !isSearch) {
-          setPage((prev) => prev + 1);
-        }
-      });
-
-      if (node) observer.current.observe(node);
-    },
-    [loading, hasNext, isSearch]
-  );
-
+  // ================= FIRST LOAD =================
   useEffect(() => {
-    if (!isSearch) {
-      loadList(page);
-    }
-  }, [page, isSearch]);
+    fetchData(1);
+  }, []);
+
+  // ================= INFINITE SCROLL =================
+  useEffect(() => {
+    const handleScroll = () => {
+      if (loading || query) return;
+
+      if (
+        window.innerHeight + window.scrollY >=
+        document.body.offsetHeight - 200
+      ) {
+        const nextPage = page + 1;
+        setPage(nextPage);
+        fetchData(nextPage);
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [page, loading, query]);
+
+  // ================= SEARCH =================
+  const handleSearch = (e) => {
+    e.preventDefault();
+    setPage(1);
+    fetchData(1, query);
+  };
 
   return (
-    <div style={{ background: "#0f0f0f", minHeight: "100vh", color: "white" }}>
+    <div style={container}>
       
       {/* HEADER */}
-      <div style={headerStyle}>
-        <h1>🎬 DramaFlix</h1>
+      <h1 style={title}>🎬 Drama Streaming</h1>
 
-        <div>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search drama..."
-            style={searchInput}
-          />
-          <button onClick={handleSearch} style={btnPrimary}>
-            Search
-          </button>
-          <button
-            onClick={() => {
-              setQ("");
-              setIsSearch(false);
-              setItems([]);
-              setPage(1);
-              setHasNext(true);
-              loadList(1);
-            }}
-            style={btnSecondary}
-          >
-            Reset
-          </button>
-        </div>
-      </div>
+      {/* SEARCH */}
+      <form onSubmit={handleSearch} style={searchBox}>
+        <input
+          placeholder="Cari drama..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          style={inputStyle}
+        />
+        <button type="submit" style={searchBtn}>
+          Cari
+        </button>
+      </form>
 
       {/* GRID */}
-      <div style={{ padding: 20 }}>
-        <div style={gridStyle}>
-          {items.map((item, i) => {
-            if (items.length === i + 1) {
-              return (
-                <Link
-                  ref={lastItemRef}
-                  key={i}
-                  href={`/detail/${item.slug}`}
-                  style={{ textDecoration: "none" }}
-                >
-                  <Card item={item} />
-                </Link>
-              );
-            }
-
-            return (
-              <Link
-                key={i}
-                href={`/detail/${item.slug}`}
-                style={{ textDecoration: "none" }}
-              >
-                <Card item={item} />
-              </Link>
-            );
-          })}
-        </div>
-
-        {/* LOADING */}
-        {loading && (
-          <p style={{ textAlign: "center", marginTop: 20 }}>
-            Loading...
-          </p>
-        )}
-
-        {!hasNext && !isSearch && (
-          <p style={{ textAlign: "center", marginTop: 20 }}>
-            🎉 Semua data sudah ditampilkan
-          </p>
-        )}
+      <div style={gridStyle}>
+        {items.map((item, i) => (
+          <Link key={i} href={`/detail/${item.slug}`}>
+            <div
+              style={cardStyle}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.transform = "scale(1.05)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.transform = "scale(1)")
+              }
+            >
+              <img src={item.thumbnail} style={imageStyle} />
+              <p style={titleStyle}>{item.title}</p>
+            </div>
+          </Link>
+        ))}
       </div>
-    </div>
-  );
-}
 
-/* ================= CARD ================= */
-
-function Card({ item }) {
-  return (
-    <div
-      style={cardStyle}
-      onMouseEnter={(e) =>
-        (e.currentTarget.style.transform = "scale(1.05)")
-      }
-      onMouseLeave={(e) =>
-        (e.currentTarget.style.transform = "scale(1)")
-      }
-    >
-      <img src={item.thumbnail} style={imgStyle} />
-
-      <div style={{ padding: 10 }}>
-        <p style={titleStyle}>{item.title}</p>
-
-        {item.episode_badge && (
-          <span style={badgeStyle}>{item.episode_badge}</span>
-        )}
-      </div>
+      {/* LOADING */}
+      {loading && <p style={{ textAlign: "center" }}>Loading...</p>}
     </div>
   );
 }
 
 /* ================= STYLE ================= */
 
-const headerStyle = {
-  padding: 20,
+const container = {
+  padding: "15px",
+  background: "#0f0f0f",
+  minHeight: "100vh",
+  color: "white",
+};
+
+const title = {
+  fontSize: 24,
+  marginBottom: 10,
+};
+
+/* SEARCH */
+const searchBox = {
   display: "flex",
-  justifyContent: "space-between",
-  borderBottom: "1px solid #222",
+  gap: 10,
+  marginBottom: 15,
 };
 
-const searchInput = {
-  padding: 8,
-  borderRadius: 6,
+const inputStyle = {
+  flex: 1,
+  padding: "10px",
+  borderRadius: 8,
   border: "none",
-  marginRight: 10,
 };
 
+const searchBtn = {
+  padding: "10px 15px",
+  background: "#e50914",
+  border: "none",
+  color: "white",
+  borderRadius: 8,
+  cursor: "pointer",
+};
+
+/* GRID FIX 🔥 */
 const gridStyle = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
-  gap: 15,
+  gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+  gap: 12,
 };
 
+/* CARD */
 const cardStyle = {
-  borderRadius: 10,
-  overflow: "hidden",
-  background: "#1a1a1a",
+  cursor: "pointer",
   transition: "0.2s",
 };
 
-const imgStyle = {
+const imageStyle = {
   width: "100%",
-  height: 250,
+  borderRadius: 10,
+  aspectRatio: "2/3",
   objectFit: "cover",
 };
 
 const titleStyle = {
-  fontSize: 14,
-  color: "#fff",
-};
-
-const badgeStyle = {
-  fontSize: 12,
-  background: "#e50914",
-  padding: "2px 6px",
-  borderRadius: 4,
-};
-
-const btnPrimary = {
-  padding: "8px 12px",
-  background: "#e50914",
-  color: "white",
-  border: "none",
-  borderRadius: 6,
-};
-
-const btnSecondary = {
-  padding: "8px 12px",
-  background: "#222",
-  color: "white",
-  border: "none",
-  borderRadius: 6,
+  marginTop: 6,
+  fontSize: 13,
+  color: "#ddd",
 };
