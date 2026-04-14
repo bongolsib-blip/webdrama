@@ -1,6 +1,6 @@
 
 import Link from "next/link";
-import { getList } from "@/lib/api";
+import { getList } from "../lib/api";
 
 export default async function Home() {
   const data = await getList(1);
