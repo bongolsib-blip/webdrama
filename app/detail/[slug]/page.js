@@ -36,20 +36,6 @@ export default function DetailPage() {
 
     setVideoUrl(data.video_url);
     setLoadingVideo(false);
-
-    // 🔥 continue watching (simple)
-    if (detail) {
-      localStorage.setItem(
-        "continue",
-        JSON.stringify([
-          {
-            slug,
-            title: detail.title,
-            thumbnail: detail.thumbnail,
-          },
-        ])
-      );
-    }
   };
 
   // ================= AUTO LOAD EP1 =================
@@ -65,31 +51,35 @@ export default function DetailPage() {
 
     const video = videoRef.current;
 
-    // HLS
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+
     if (videoUrl.includes(".m3u8")) {
       if (Hls.isSupported()) {
         const hls = new Hls();
-
         hls.loadSource(videoUrl);
         hls.attachMedia(video);
 
-        return () => {
-          hls.destroy();
-        };
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play().catch(() => {});
+        });
+
+        return () => hls.destroy();
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = videoUrl;
+        video.play().catch(() => {});
       }
     } else {
-      // MP4 fallback
       video.src = videoUrl;
+      video.play().catch(() => {});
     }
   }, [videoUrl]);
 
   // ================= AUTO NEXT =================
   const handleEnded = () => {
-    const next = episode + 1;
-    if (detail?.total_episode && next <= detail.total_episode) {
-      loadEpisode(next);
+    if (episode < detail.total_episode) {
+      loadEpisode(episode + 1);
     }
   };
 
@@ -103,13 +93,38 @@ export default function DetailPage() {
         {loadingVideo ? (
           <div style={loadingBox}>Loading video...</div>
         ) : (
-          <video
-            ref={videoRef}
-            controls
-            autoPlay
-            onEnded={handleEnded}
-            style={videoStyle}
-          />
+          <>
+            <video
+              ref={videoRef}
+              controls
+              autoPlay
+              onEnded={handleEnded}
+              style={videoStyle}
+            />
+
+            {/* 🎬 PLAYER CONTROL BAR */}
+            <div style={controlBar}>
+              <button
+                disabled={episode === 1}
+                onClick={() => loadEpisode(episode - 1)}
+                style={btnControl}
+              >
+                ⏮ Prev
+              </button>
+
+              <span style={episodeInfo}>
+                Episode {episode} / {detail.total_episode}
+              </span>
+
+              <button
+                disabled={episode === detail.total_episode}
+                onClick={() => loadEpisode(episode + 1)}
+                style={btnControl}
+              >
+                Next ⏭
+              </button>
+            </div>
+          </>
         )}
       </div>
 
@@ -186,6 +201,27 @@ const loadingBox = {
   alignItems: "center",
   background: "#1a1a1a",
   borderRadius: 10,
+};
+
+const controlBar = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginTop: 10,
+};
+
+const btnControl = {
+  padding: "8px 12px",
+  background: "#e50914",
+  border: "none",
+  color: "white",
+  borderRadius: 6,
+  cursor: "pointer",
+};
+
+const episodeInfo = {
+  fontSize: 14,
+  color: "#ccc",
 };
 
 const infoWrapper = {
