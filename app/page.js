@@ -9,17 +9,16 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
 
-  // ================= LOAD DATA =================
+  const [history, setHistory] = useState([]);
+  const [historyDetail, setHistoryDetail] = useState([]);
+
+  // ================= LOAD LIST =================
   const fetchData = async (p = 1, q = "") => {
     setLoading(true);
 
-    let url = "";
-
-    if (q) {
-      url = `https://drama-liart.vercel.app/search?q=${q}`;
-    } else {
-      url = `https://drama-liart.vercel.app/list?page=${p}`;
-    }
+    let url = q
+      ? `https://drama-liart.vercel.app/search?q=${q}`
+      : `https://drama-liart.vercel.app/list?page=${p}`;
 
     try {
       const res = await fetch(url);
@@ -27,11 +26,8 @@ export default function Home() {
 
       const newItems = q ? data.items : data.data?.items;
 
-      if (p === 1) {
-        setItems(newItems || []);
-      } else {
-        setItems((prev) => [...prev, ...(newItems || [])]);
-      }
+      if (p === 1) setItems(newItems || []);
+      else setItems((prev) => [...prev, ...(newItems || [])]);
     } catch (err) {
       console.log(err);
     }
@@ -39,7 +35,6 @@ export default function Home() {
     setLoading(false);
   };
 
-  // ================= FIRST LOAD =================
   useEffect(() => {
     fetchData(1);
   }, []);
@@ -70,10 +65,44 @@ export default function Home() {
     fetchData(1, query);
   };
 
+  // ================= LOAD HISTORY =================
+  useEffect(() => {
+    const data = JSON.parse(localStorage.getItem("history_watch") || "[]");
+    setHistory(data);
+  }, []);
+
+  // ================= FETCH DETAIL HISTORY =================
+  useEffect(() => {
+    const fetchHistory = async () => {
+      if (!history.length) return;
+
+      const results = await Promise.all(
+        history.map(async (item) => {
+          try {
+            const res = await fetch(
+              `https://drama-liart.vercel.app/detail?slug=${item.slug}`
+            );
+            const data = await res.json();
+
+            return {
+              ...item,
+              title: data?.data?.title,
+              thumbnail: data?.data?.thumbnail,
+            };
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      setHistoryDetail(results.filter(Boolean));
+    };
+
+    fetchHistory();
+  }, [history]);
+
   return (
     <div style={container}>
-      
-      {/* HEADER */}
       <h1 style={title}>🎬 Drama Streaming</h1>
 
       {/* SEARCH */}
@@ -84,24 +113,38 @@ export default function Home() {
           onChange={(e) => setQuery(e.target.value)}
           style={inputStyle}
         />
-        <button type="submit" style={searchBtn}>
-          Cari
-        </button>
+        <button style={searchBtn}>Cari</button>
       </form>
+
+      {/* CONTINUE WATCHING */}
+      {historyDetail.length > 0 && (
+        <>
+          <h2 style={{ marginBottom: 10 }}>▶ Continue Watching</h2>
+
+          <div style={rowStyle}>
+            {historyDetail.map((item, i) => (
+              <Link
+                key={i}
+                href={`/detail/${item.slug}?ep=${item.episode}`}
+              >
+                <div style={historyCard}>
+                  <img src={item.thumbnail} style={historyImg} />
+                  <div style={historyInfo}>
+                    <p>{item.title}</p>
+                    <span>Ep {item.episode}</span>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* GRID */}
       <div style={gridStyle}>
         {items.map((item, i) => (
           <Link key={i} href={`/detail/${item.slug}`}>
-            <div
-              style={cardStyle}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.transform = "scale(1.05)")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.transform = "scale(1)")
-              }
-            >
+            <div style={cardStyle}>
               <img src={item.thumbnail} style={imageStyle} />
               <p style={titleStyle}>{item.title}</p>
             </div>
@@ -109,27 +152,22 @@ export default function Home() {
         ))}
       </div>
 
-      {/* LOADING */}
       {loading && <p style={{ textAlign: "center" }}>Loading...</p>}
     </div>
   );
 }
 
-/* ================= STYLE ================= */
+/* STYLE */
 
 const container = {
-  padding: "15px",
+  padding: 15,
   background: "#0f0f0f",
   minHeight: "100vh",
   color: "white",
 };
 
-const title = {
-  fontSize: 24,
-  marginBottom: 10,
-};
+const title = { fontSize: 24, marginBottom: 10 };
 
-/* SEARCH */
 const searchBox = {
   display: "flex",
   gap: 10,
@@ -138,7 +176,7 @@ const searchBox = {
 
 const inputStyle = {
   flex: 1,
-  padding: "10px",
+  padding: 10,
   borderRadius: 8,
   border: "none",
 };
@@ -149,21 +187,15 @@ const searchBtn = {
   border: "none",
   color: "white",
   borderRadius: 8,
-  cursor: "pointer",
 };
 
-/* GRID FIX 🔥 */
 const gridStyle = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
   gap: 12,
 };
 
-/* CARD */
-const cardStyle = {
-  cursor: "pointer",
-  transition: "0.2s",
-};
+const cardStyle = { cursor: "pointer" };
 
 const imageStyle = {
   width: "100%",
@@ -176,4 +208,29 @@ const titleStyle = {
   marginTop: 6,
   fontSize: 13,
   color: "#ddd",
+};
+
+/* CONTINUE WATCHING */
+const rowStyle = {
+  display: "flex",
+  overflowX: "auto",
+  gap: 10,
+  marginBottom: 20,
+};
+
+const historyCard = {
+  minWidth: 140,
+};
+
+const historyImg = {
+  width: "100%",
+  borderRadius: 8,
+  aspectRatio: "2/3",
+  objectFit: "cover",
+};
+
+const historyInfo = {
+  marginTop: 5,
+  fontSize: 12,
+  color: "#ccc",
 };
