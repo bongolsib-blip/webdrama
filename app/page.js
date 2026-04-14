@@ -8,8 +8,8 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [hasNext, setHasNext] = useState(false);
   const [q, setQ] = useState("");
+  const [isSearch, setIsSearch] = useState(false);
 
-  // 🔥 LOAD LIST
   const loadList = async (p = 1) => {
     const res = await fetch(
       `https://drama-liart.vercel.app/list?page=${p}`
@@ -20,9 +20,14 @@ export default function Home() {
     setHasNext(data?.data?.has_next || false);
   };
 
-  // 🔥 SEARCH
   const handleSearch = async () => {
-    if (!q) return loadList(1);
+    if (!q) {
+      setIsSearch(false);
+      setPage(1);
+      return loadList(1);
+    }
+
+    setIsSearch(true);
 
     const res = await fetch(
       `https://drama-liart.vercel.app/search?q=${q}`
@@ -34,14 +39,16 @@ export default function Home() {
   };
 
   useEffect(() => {
-    loadList(page);
-  }, [page]);
+    if (!isSearch) {
+      loadList(page);
+    }
+  }, [page, isSearch]);
 
   return (
     <div style={{ padding: 20 }}>
       <h1>🎬 Drama Streaming</h1>
 
-      {/* 🔍 SEARCH */}
+      {/* SEARCH */}
       <div style={{ marginBottom: 20 }}>
         <input
           placeholder="Cari drama..."
@@ -52,13 +59,25 @@ export default function Home() {
         <button onClick={handleSearch} style={{ marginLeft: 10 }}>
           Search
         </button>
+
+        <button
+          onClick={() => {
+            setQ("");
+            setIsSearch(false);
+            setPage(1);
+            loadList(1);
+          }}
+          style={{ marginLeft: 10 }}
+        >
+          Reset
+        </button>
       </div>
 
-      {/* 🎞 LIST */}
+      {/* LIST */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4,1fr)",
+          gridTemplateColumns: "repeat(auto-fill, minmax(150px,1fr))",
           gap: 10,
         }}
       >
@@ -72,11 +91,11 @@ export default function Home() {
         ))}
       </div>
 
-      {/* 📄 PAGINATION */}
+      {/* PAGINATION */}
       <div style={{ marginTop: 20 }}>
         <button
-          disabled={page === 1}
-          onClick={() => setPage(page - 1)}
+          disabled={page === 1 || isSearch}
+          onClick={() => setPage((prev) => prev - 1)}
         >
           ⬅ Prev
         </button>
@@ -84,8 +103,8 @@ export default function Home() {
         <span style={{ margin: "0 10px" }}>Page {page}</span>
 
         <button
-          disabled={!hasNext}
-          onClick={() => setPage(page + 1)}
+          disabled={!hasNext || isSearch}
+          onClick={() => setPage((prev) => prev + 1)}
         >
           Next ➡
         </button>
