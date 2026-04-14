@@ -2,7 +2,11 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
-import Hls from "hls.js";
+
+let Hls;
+if (typeof window !== "undefined") {
+  Hls = require("hls.js");
+}
 
 export default function DetailPage() {
   const params = useParams();
@@ -15,73 +19,78 @@ export default function DetailPage() {
 
   const videoRef = useRef(null);
 
-  // LOAD DETAIL
+  // ================= LOAD DETAIL =================
   useEffect(() => {
     if (!slug) return;
 
     fetch(`https://drama-liart.vercel.app/detail?slug=${slug}`)
       .then((r) => r.json())
-      .then((d) => setDetail(d.data));
+      .then((d) => setDetail(d?.data || null))
+      .catch(() => setDetail(null));
   }, [slug]);
 
-  // LOAD EPISODE
+  // ================= LOAD EPISODE =================
   const loadEpisode = async (ep) => {
+    if (!slug) return;
+
     setEpisode(ep);
     setLoadingVideo(true);
 
-    const res = await fetch(
-      `https://drama-liart.vercel.app/video?slug=${slug}&ep=${ep}`
-    );
-    const data = await res.json();
+    try {
+      const res = await fetch(
+        `https://drama-liart.vercel.app/video?slug=${slug}&ep=${ep}`
+      );
+      const data = await res.json();
 
-    setVideoUrl(data.video_url);
+      setVideoUrl(data?.video_url || "");
+    } catch (e) {
+      console.log(e);
+    }
+
     setLoadingVideo(false);
   };
 
+  // ================= AUTO LOAD EP1 =================
   useEffect(() => {
     if (detail?.total_episode) {
       loadEpisode(1);
     }
   }, [detail]);
 
-  // HLS PLAYER
+  // ================= PLAYER =================
   useEffect(() => {
     if (!videoUrl || !videoRef.current) return;
 
     const video = videoRef.current;
 
-    video.pause();
-    video.removeAttribute("src");
-    video.load();
+    try {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
 
-    if (videoUrl.includes(".m3u8")) {
-      if (Hls.isSupported()) {
+      if (videoUrl.includes(".m3u8") && Hls && Hls.isSupported()) {
         const hls = new Hls();
         hls.loadSource(videoUrl);
         hls.attachMedia(video);
 
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          video.play().catch(() => {});
-        });
-
         return () => hls.destroy();
-      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      } else {
         video.src = videoUrl;
-        video.play().catch(() => {});
       }
-    } else {
-      video.src = videoUrl;
-      video.play().catch(() => {});
+    } catch (err) {
+      console.log("Player error:", err);
     }
   }, [videoUrl]);
 
+  // ================= AUTO NEXT =================
   const handleEnded = () => {
     if (episode < detail.total_episode) {
       loadEpisode(episode + 1);
     }
   };
 
-  if (!detail) return <p style={{ padding: 20 }}>Loading...</p>;
+  if (!slug) return <p style={{ padding: 20 }}>Loading...</p>;
+  if (!detail) return <p style={{ padding: 20 }}>Loading data...</p>;
 
   return (
     <div style={container}>
@@ -111,7 +120,7 @@ export default function DetailPage() {
               </button>
 
               <span style={episodeInfo}>
-                EP {episode}/{detail.total_episode}
+                Episode {episode} / {detail.total_episode}
               </span>
 
               <button
@@ -178,15 +187,19 @@ const container = {
   padding: "10px",
 };
 
-/* PLAYER */
+/* PLAYER FIX */
 const playerWrapper = {
   width: "100%",
+  maxWidth: "900px", // 🔥 desktop limit
+  margin: "0 auto",
 };
 
 const videoStyle = {
   width: "100%",
-  borderRadius: 10,
+  maxHeight: "80vh", // 🔥 fix portrait issue
+  objectFit: "contain", // 🔥 no crop
   background: "black",
+  borderRadius: 10,
 };
 
 /* CONTROL */
@@ -214,7 +227,7 @@ const episodeInfo = {
 /* INFO */
 const infoWrapper = {
   display: "flex",
-  flexDirection: "column", // 🔥 mobile default
+  flexDirection: "column",
   gap: 15,
   marginTop: 15,
 };
@@ -239,7 +252,7 @@ const tagStyle = {
   fontSize: 12,
 };
 
-/* EPISODE */
+/* EPISODES */
 const episodeGrid = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fill, minmax(50px, 1fr))",
@@ -252,6 +265,8 @@ const episodeBtn = {
   color: "white",
   borderRadius: 6,
 };
+
+/* LOADING */
 const loadingBox = {
   height: 250,
   display: "flex",
