@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
+import Hls from "hls.js";
 
 export default function DetailPage() {
   const params = useParams();
@@ -12,7 +13,9 @@ export default function DetailPage() {
   const [episode, setEpisode] = useState(1);
   const [loadingVideo, setLoadingVideo] = useState(false);
 
-  // 🔥 LOAD DETAIL
+  const videoRef = useRef(null);
+
+  // ================= LOAD DETAIL =================
   useEffect(() => {
     if (!slug) return;
 
@@ -21,7 +24,7 @@ export default function DetailPage() {
       .then((d) => setDetail(d.data));
   }, [slug]);
 
-  // 🔥 LOAD EPISODE
+  // ================= LOAD EPISODE =================
   const loadEpisode = async (ep) => {
     setEpisode(ep);
     setLoadingVideo(true);
@@ -34,27 +37,55 @@ export default function DetailPage() {
     setVideoUrl(data.video_url);
     setLoadingVideo(false);
 
-    // 🔥 SIMPAN CONTINUE WATCHING
-    localStorage.setItem(
-      "continue",
-      JSON.stringify([
-        {
-          slug,
-          title: detail.title,
-          thumbnail: detail.thumbnail,
-        },
-      ])
-    );
+    // 🔥 continue watching (simple)
+    if (detail) {
+      localStorage.setItem(
+        "continue",
+        JSON.stringify([
+          {
+            slug,
+            title: detail.title,
+            thumbnail: detail.thumbnail,
+          },
+        ])
+      );
+    }
   };
 
-  // AUTO LOAD EP 1
+  // ================= AUTO LOAD EP1 =================
   useEffect(() => {
     if (detail?.total_episode) {
       loadEpisode(1);
     }
   }, [detail]);
 
-  // AUTO NEXT
+  // ================= HLS PLAYER =================
+  useEffect(() => {
+    if (!videoUrl || !videoRef.current) return;
+
+    const video = videoRef.current;
+
+    // HLS
+    if (videoUrl.includes(".m3u8")) {
+      if (Hls.isSupported()) {
+        const hls = new Hls();
+
+        hls.loadSource(videoUrl);
+        hls.attachMedia(video);
+
+        return () => {
+          hls.destroy();
+        };
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = videoUrl;
+      }
+    } else {
+      // MP4 fallback
+      video.src = videoUrl;
+    }
+  }, [videoUrl]);
+
+  // ================= AUTO NEXT =================
   const handleEnded = () => {
     const next = episode + 1;
     if (detail?.total_episode && next <= detail.total_episode) {
@@ -72,17 +103,13 @@ export default function DetailPage() {
         {loadingVideo ? (
           <div style={loadingBox}>Loading video...</div>
         ) : (
-          videoUrl && (
-            <video
-              key={videoUrl}
-              controls
-              autoPlay
-              onEnded={handleEnded}
-              style={videoStyle}
-            >
-              <source src={videoUrl} />
-            </video>
-          )
+          <video
+            ref={videoRef}
+            controls
+            autoPlay
+            onEnded={handleEnded}
+            style={videoStyle}
+          />
         )}
       </div>
 
@@ -107,7 +134,7 @@ export default function DetailPage() {
         </div>
       </div>
 
-      {/* EPISODE LIST */}
+      {/* EPISODES */}
       <div style={{ marginTop: 30 }}>
         <h3>Episodes</h3>
 
@@ -149,6 +176,7 @@ const playerWrapper = {
 const videoStyle = {
   width: "100%",
   borderRadius: 10,
+  background: "black",
 };
 
 const loadingBox = {
