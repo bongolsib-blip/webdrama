@@ -17,6 +17,7 @@ export default function PlayerPage() {
   const [showList, setShowList] = useState(false);
 
   const videoRef = useRef(null);
+  const [nextVideo, setNextVideo] = useState(null);
 
   // FETCH DETAIL
   useEffect(() => {
@@ -53,11 +54,34 @@ export default function PlayerPage() {
     video.load();
     video.play().catch(() => {});
   }, [videoUrl]);
+  useEffect(() => {
+    if (!episode || !detail?.total_episode) return;
+  
+    if (episode >= detail.total_episode) return;
+  
+    const nextEp = episode + 1;
+  
+    fetch(
+      `https://drama-liart.vercel.app/video?slug=${slug}&ep=${nextEp}`
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        setNextVideo(data.video_url);
+      });
+  }, [episode]);
 
   // AUTO NEXT
   const handleEnd = () => {
     if (episode < detail.total_episode) {
-      loadEpisode(episode + 1);
+      const nextEp = episode + 1;
+  
+      setEpisode(nextEp);
+  
+      if (nextVideo) {
+        setVideoUrl(nextVideo);
+      } else {
+        loadEpisode(nextEp);
+      }
     }
   };
 
