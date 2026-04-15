@@ -62,7 +62,74 @@ export default function Home() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+  // ================= OPEN MODAL =================
+    const openDetail = async (item) => {
+      setSelected(item);
+      setDetail(null);
+  
+      const res = await fetch(
+        `https://drama-liart.vercel.app/detail?slug=${item.slug}`
+      );
+      const data = await res.json();
+  
+      setDetail(data.data);
+    };
+  
+    return (
+      <div style={container}>
+        <h1 style={title}>🎬 Drama Streaming</h1>
+  
+        {/* GRID */}
+        <div style={gridStyle}>
+          {items.map((item, i) => (
+            <div key={i} onClick={() => openDetail(item)} style={cardStyle}>
+              <img src={item.thumbnail} style={imageStyle} />
+              <p style={titleStyle}>{item.title}</p>
+            </div>
+          ))}
+        </div>
+  
+        {loading && <p style={{ textAlign: "center" }}>Loading...</p>}
+  
+        {/* MODAL */}
+        {selected && (
+          <div style={modalOverlay} onClick={() => setSelected(null)}>
+            <div style={modalBox} onClick={(e) => e.stopPropagation()}>
+              
+              {!detail ? (
+                <p>Loading detail...</p>
+              ) : (
+                <>
+                  <img src={detail.thumbnail} style={modalImg} />
+  
+                  <h2>{detail.title}</h2>
+  
+                  <p style={desc}>{detail.description}</p>
+  
+                  <p>Total Episode: {detail.total_episode}</p>
+  
+                  <div style={btnGroup}>
+                    <Link href={`/detail/${selected.slug}`}>
+                      <button style={playBtn}>▶ Tonton</button>
+                    </Link>
+  
+                    <button
+                      onClick={() => setSelected(null)}
+                      style={closeBtn}
+                    >
+                      Tutup
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
+  // ----------------------------------------------------
   return (
     <div style={styles.page}>
 
