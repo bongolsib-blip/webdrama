@@ -248,6 +248,10 @@ const styles = {
     maxWidth: 400,
     width: "90%",
     color: "white",
+  
+    maxHeight: "80vh",
+    overflowY: "auto",
+    WebkitOverflowScrolling: "touch",
   },
 
   modalImg: {
