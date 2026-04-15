@@ -9,10 +9,17 @@ export default function Home() {
 
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
+
   const [loading, setLoading] = useState(false);
+
+  // 🔥 MODAL STATE
+  const [selected, setSelected] = useState(null);
+  const [detail, setDetail] = useState(null);
 
   // ================= LOAD LIST =================
   const loadData = async (p = 1) => {
+    if (loading) return;
+
     setLoading(true);
 
     const res = await fetch(
@@ -43,7 +50,7 @@ export default function Home() {
 
       const data = await res.json();
       setSuggestions(data.items || []);
-    }, 300); // debounce
+    }, 300);
 
     return () => clearTimeout(delay);
   }, [query]);
@@ -51,6 +58,8 @@ export default function Home() {
   // ================= INFINITE SCROLL =================
   useEffect(() => {
     const handleScroll = () => {
+      if (loading) return;
+
       if (
         window.innerHeight + window.scrollY >=
         document.body.offsetHeight - 200
@@ -61,79 +70,26 @@ export default function Home() {
 
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-  // ================= OPEN MODAL =================
-    const openDetail = async (item) => {
-      setSelected(item);
-      setDetail(null);
-  
-      const res = await fetch(
-        `https://drama-liart.vercel.app/detail?slug=${item.slug}`
-      );
-      const data = await res.json();
-  
-      setDetail(data.data);
-    };
-  
-    return (
-      <div style={container}>
-        <h1 style={title}>🎬 Drama Streaming</h1>
-  
-        {/* GRID */}
-        <div style={gridStyle}>
-          {items.map((item, i) => (
-            <div key={i} onClick={() => openDetail(item)} style={cardStyle}>
-              <img src={item.thumbnail} style={imageStyle} />
-              <p style={titleStyle}>{item.title}</p>
-            </div>
-          ))}
-        </div>
-  
-        {loading && <p style={{ textAlign: "center" }}>Loading...</p>}
-  
-        {/* MODAL */}
-        {selected && (
-          <div style={modalOverlay} onClick={() => setSelected(null)}>
-            <div style={modalBox} onClick={(e) => e.stopPropagation()}>
-              
-              {!detail ? (
-                <p>Loading detail...</p>
-              ) : (
-                <>
-                  <img src={detail.thumbnail} style={modalImg} />
-  
-                  <h2>{detail.title}</h2>
-  
-                  <p style={desc}>{detail.description}</p>
-  
-                  <p>Total Episode: {detail.total_episode}</p>
-  
-                  <div style={btnGroup}>
-                    <Link href={`/detail/${selected.slug}`}>
-                      <button style={playBtn}>▶ Tonton</button>
-                    </Link>
-  
-                    <button
-                      onClick={() => setSelected(null)}
-                      style={closeBtn}
-                    >
-                      Tutup
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
+  }, [loading]);
 
-  // ----------------------------------------------------
+  // ================= OPEN MODAL =================
+  const openDetail = async (item) => {
+    setSelected(item);
+    setDetail(null);
+
+    const res = await fetch(
+      `https://drama-liart.vercel.app/detail?slug=${item.slug}`
+    );
+
+    const data = await res.json();
+    setDetail(data.data);
+  };
+
+  // ================= UI =================
   return (
     <div style={styles.page}>
 
-      {/* ================= SEARCH BAR ================= */}
+      {/* SEARCH */}
       <div style={styles.searchBox}>
         <input
           value={query}
@@ -143,37 +99,32 @@ export default function Home() {
         />
       </div>
 
-      {/* ================= SUGGESTION ================= */}
+      {/* SUGGESTION */}
       {query && suggestions.length > 0 && (
         <div style={styles.suggestionBox}>
           {suggestions.map((item, i) => (
-            <Link
+            <div
               key={i}
-              href={`/detail/${item.slug}`}
               style={styles.suggestionItem}
-              onClick={() => setQuery("")}
+              onClick={() => openDetail(item)}
             >
               {item.title}
-            </Link>
+            </div>
           ))}
         </div>
       )}
 
-      {/* ================= GRID ================= */}
+      {/* GRID */}
       <div style={styles.grid}>
         {items.map((item, i) => (
-          <Link
+          <div
             key={i}
-            href={`/detail/${item.slug}`}
             style={styles.card}
+            onClick={() => openDetail(item)}
           >
-            <img
-              src={item.thumbnail}
-              style={styles.img}
-              alt=""
-            />
+            <img src={item.thumbnail} style={styles.img} />
             <div style={styles.title}>{item.title}</div>
-          </Link>
+          </div>
         ))}
       </div>
 
@@ -182,6 +133,43 @@ export default function Home() {
           Loading...
         </div>
       )}
+
+      {/* MODAL */}
+      {selected && (
+        <div style={styles.modalOverlay} onClick={() => setSelected(null)}>
+          <div style={styles.modalBox} onClick={(e) => e.stopPropagation()}>
+
+            {!detail ? (
+              <p style={{ color: "white" }}>Loading...</p>
+            ) : (
+              <>
+                <img src={detail.thumbnail} style={styles.modalImg} />
+
+                <h2>{detail.title}</h2>
+
+                <p style={styles.desc}>{detail.description}</p>
+
+                <p>Total Episode: {detail.total_episode}</p>
+
+                <div style={styles.btnGroup}>
+                  <Link href={`/detail/${selected.slug}`}>
+                    <button style={styles.playBtn}>▶ Tonton</button>
+                  </Link>
+
+                  <button
+                    onClick={() => setSelected(null)}
+                    style={styles.closeBtn}
+                  >
+                    Tutup
+                  </button>
+                </div>
+              </>
+            )}
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -189,17 +177,13 @@ export default function Home() {
 /* ================= STYLE ================= */
 
 const styles = {
-  page: {
-    background: "#000",
-    minHeight: "100vh",
-    padding: 10,
-  },
+  page: { background: "#000", minHeight: "100vh", padding: 10 },
 
   searchBox: {
     position: "sticky",
     top: 0,
-    zIndex: 10,
     background: "#000",
+    zIndex: 10,
     padding: 10,
   },
 
@@ -208,23 +192,19 @@ const styles = {
     padding: 12,
     borderRadius: 10,
     border: "none",
-    outline: "none",
-    fontSize: 14,
   },
 
   suggestionBox: {
     background: "#111",
-    marginTop: 5,
     borderRadius: 10,
-    overflow: "hidden",
+    marginTop: 5,
   },
 
   suggestionItem: {
-    display: "block",
     padding: 10,
     color: "white",
     borderBottom: "1px solid #222",
-    textDecoration: "none",
+    cursor: "pointer",
   },
 
   grid: {
@@ -235,8 +215,7 @@ const styles = {
   },
 
   card: {
-    textDecoration: "none",
-    color: "white",
+    cursor: "pointer",
   },
 
   img: {
@@ -248,7 +227,60 @@ const styles = {
 
   title: {
     fontSize: 12,
-    marginTop: 5,
+    color: "white",
     textAlign: "center",
+    marginTop: 5,
+  },
+
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.8)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  modalBox: {
+    background: "#111",
+    padding: 20,
+    borderRadius: 10,
+    maxWidth: 400,
+    width: "90%",
+    color: "white",
+  },
+
+  modalImg: {
+    width: "100%",
+    borderRadius: 10,
+  },
+
+  desc: {
+    fontSize: 13,
+    marginTop: 10,
+  },
+
+  btnGroup: {
+    marginTop: 15,
+    display: "flex",
+    gap: 10,
+  },
+
+  playBtn: {
+    flex: 1,
+    background: "red",
+    color: "white",
+    border: "none",
+    padding: 10,
+    borderRadius: 6,
+  },
+
+  closeBtn: {
+    flex: 1,
+    background: "#333",
+    color: "white",
+    border: "none",
+    padding: 10,
+    borderRadius: 6,
   },
 };
