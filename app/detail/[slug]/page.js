@@ -231,7 +231,8 @@ const styles = {
   },
 
   sheet: {
-    width: "100%",
+    maxWidth: 400,
+    width: "90%",
     maxHeight: "70vh",
     background: "#111",
     padding: 10,
