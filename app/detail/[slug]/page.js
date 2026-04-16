@@ -136,32 +136,42 @@ export default function PlayerPage() {
       {showList && (
         <div style={styles.overlay} onClick={() => setShowList(false)}>
           <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
-          {/* 🔥 CLOSE BUTTON */}
-          <button
-            onClick={() => setShowList(false)}
-            style={styles.closeBtn}
-          >
-            ✕
-          </button>
-            {Array.from({ length: detail.total_episode }).map((_, i) => {
-              const ep = i + 1;
-
-              return (
-                <button
-                  key={ep}
-                  onClick={() => {
-                    loadEpisode(ep);
-                    setShowList(false);
-                  }}
-                  style={{
-                    ...styles.epBtn,
-                    background: ep === episode ? "red" : "#333",
-                  }}
-                >
-                  {ep}
-                </button>
-              );
-            })}
+        
+            {/* HEADER */}
+            <div style={styles.sheetHeader}>
+              <span style={{ color: "white" }}>Pilih Episode</span>
+        
+              <button
+                onClick={() => setShowList(false)}
+                style={styles.closeBtn}
+              >
+                ✕
+              </button>
+            </div>
+        
+            {/* GRID */}
+            <div style={styles.sheetGrid}>
+              {Array.from({ length: detail.total_episode }).map((_, i) => {
+                const ep = i + 1;
+        
+                return (
+                  <button
+                    key={ep}
+                    onClick={() => {
+                      loadEpisode(ep);
+                      setShowList(false);
+                    }}
+                    style={{
+                      ...styles.epBtn,
+                      background: ep === episode ? "red" : "#333",
+                    }}
+                  >
+                    {ep}
+                  </button>
+                );
+              })}
+            </div>
+        
           </div>
         </div>
       )}
@@ -203,18 +213,13 @@ const styles = {
   },
 
   closeBtn: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-    background: "rgba(0,0,0,0.6)",
-    color: "white",
+    background: "none",
     border: "none",
-    borderRadius: "50%",
-    width: 30,
-    height: 30,
+    color: "white",
+    fontSize: 18,
     cursor: "pointer",
   },
-
+  
   title: {
     fontSize: 14,
     color: "white",
@@ -251,19 +256,32 @@ const styles = {
     justifyContent: "center",
   },
 
+  sheetHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "10px 15px",
+    borderBottom: "1px solid #222",
+  },
+  
+  sheetGrid: {
+    padding: 10,
+    display: "grid",
+    gridTemplateColumns: "repeat(5, 1fr)",
+    gap: 10,
+    overflowY: "auto",
+    WebkitOverflowScrolling: "touch",
+  },
+  
   sheet: {
     maxWidth: 400,
     width: "90%",
     maxHeight: "70vh",
     background: "#111",
-    padding: 10,
-    display: "grid",
-    gridTemplateColumns: "repeat(5, 1fr)",
-    gap: 10,
-    position: "relative",
-    
-    overflowY: "auto",
-    WebkitOverflowScrolling: "touch",
+    borderRadius: 12,
+    overflow: "hidden", // 🔥 penting
+    display: "flex",
+    flexDirection: "column",
   },
 
   epBtn: {
