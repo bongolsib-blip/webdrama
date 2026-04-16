@@ -240,6 +240,8 @@ const styles = {
     gridTemplateColumns: "repeat(5, 1fr)",
     gap: 10,
     
+    alignItems: "center",
+    justifyContent: "center",
     overflowY: "auto",
     WebkitOverflowScrolling: "touch",
   },
