@@ -202,6 +202,19 @@ const styles = {
     fontSize: 20,
   },
 
+  closeBtn: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    background: "rgba(0,0,0,0.6)",
+    color: "white",
+    border: "none",
+    borderRadius: "50%",
+    width: 30,
+    height: 30,
+    cursor: "pointer",
+  },
+
   title: {
     fontSize: 14,
     color: "white",
@@ -247,6 +260,7 @@ const styles = {
     display: "grid",
     gridTemplateColumns: "repeat(5, 1fr)",
     gap: 10,
+    position: "relative",
     
     overflowY: "auto",
     WebkitOverflowScrolling: "touch",
