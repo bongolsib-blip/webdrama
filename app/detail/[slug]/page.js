@@ -238,6 +238,9 @@ const styles = {
     display: "grid",
     gridTemplateColumns: "repeat(5, 1fr)",
     gap: 10,
+    
+    overflowY: "auto",
+    WebkitOverflowScrolling: "touch",
   },
 
   epBtn: {
