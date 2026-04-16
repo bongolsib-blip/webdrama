@@ -136,6 +136,13 @@ export default function PlayerPage() {
       {showList && (
         <div style={styles.overlay} onClick={() => setShowList(false)}>
           <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
+          {/* 🔥 CLOSE BUTTON */}
+          <button
+            onClick={() => setShowList(false)}
+            style={styles.closeBtn}
+          >
+            ✕
+          </button>
             {Array.from({ length: detail.total_episode }).map((_, i) => {
               const ep = i + 1;
 
