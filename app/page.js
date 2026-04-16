@@ -177,15 +177,7 @@ export default function Home() {
 /* ================= STYLE ================= */
 
 const styles = {
-  page: {
-    background: "#000",
-    minHeight: "100vh",
-  
-    margin: "0 auto",
-    maxWidth: 1200,
-  
-    padding: 10,
-  },
+  page: { background: "#000", minHeight: "100vh", padding: 10 },
 
   searchBox: {
     position: "sticky",
