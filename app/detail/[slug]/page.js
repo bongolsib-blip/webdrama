@@ -227,7 +227,8 @@ const styles = {
     inset: 0,
     background: "rgba(0,0,0,0.8)",
     display: "flex",
-    alignItems: "flex-end",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   sheet: {
@@ -240,8 +241,6 @@ const styles = {
     gridTemplateColumns: "repeat(5, 1fr)",
     gap: 10,
     
-    alignItems: "center",
-    justifyContent: "center",
     overflowY: "auto",
     WebkitOverflowScrolling: "touch",
   },
