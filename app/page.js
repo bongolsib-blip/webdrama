@@ -15,6 +15,7 @@ export default function Home() {
   // 🔥 MODAL STATE
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [preview, setPreview] = useState({});
 
   // ================= LOAD LIST =================
   const loadData = async (p = 1) => {
@@ -98,6 +99,28 @@ export default function Home() {
     return () => document.head.removeChild(style);
   }, []);
 
+  // ============================ auto play =================
+  const loadPreview = async (slug) => {
+    if (preview[slug]) return;
+  
+    try {
+      const res = await fetch(
+        `https://drama-liart.vercel.app/video?slug=${slug}&ep=1`
+      );
+  
+      const data = await res.json();
+  
+      if (data.video_url) {
+        setPreview((prev) => ({
+          ...prev,
+          [slug]: data.video_url,
+        }));
+      }
+    } catch (e) {
+      console.log("preview error", e);
+    }
+  };
+
   // ================= UI =================
   return (
     <div style={styles.page}>
@@ -145,9 +168,23 @@ export default function Home() {
             <div
               key={i}
               style={styles.card}
+              onMouseEnter={() => loadPreview(item.slug)}
+              onTouchStart={() => loadPreview(item.slug)}
               onClick={() => openDetail(item)}
             >
-              <img src={item.thumbnail} style={styles.img} />
+              {preview[item.slug] ? (
+                <video
+                  src={preview[item.slug]}
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  style={styles.previewVideo}
+                />
+              ) : (
+                <img src={item.thumbnail} style={styles.img} />
+              )}
+          
               <div style={styles.title}>{item.title}</div>
             </div>
           ))}
@@ -214,6 +251,7 @@ const styles = {
     background: "#000",
     zIndex: 10,
     padding: 10,
+    max-width: "30%",
   },
 
   input: {
@@ -335,5 +373,11 @@ const styles = {
     marginTop: 6,
     borderRadius: 4,
     background: "#222",
+  },
+  previewVideo: {
+    width: "100%",
+    aspectRatio: "2/3",
+    borderRadius: 10,
+    objectFit: "cover",
   },
 };
