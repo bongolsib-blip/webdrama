@@ -251,7 +251,7 @@ const styles = {
     background: "#000",
     zIndex: 10,
     padding: 10,
-    max-width: "30%",
+    width: "30%",
   },
 
   input: {
