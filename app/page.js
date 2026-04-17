@@ -166,7 +166,7 @@ export default function Home() {
             <div
               key={i}
               className="card-item"
-              style={styles.card}
+              style={styles.card, pointerEvents: selected ? "none" : "auto",}
               onClick={() => openDetail(item)}
               onMouseEnter={(e) => {
                 const el = e.currentTarget;
@@ -339,6 +339,7 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 9999, // 🔥 WAJIB
   },
 
   modalBox: {
