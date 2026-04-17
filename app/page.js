@@ -84,6 +84,19 @@ export default function Home() {
     const data = await res.json();
     setDetail(data.data);
   };
+  // ========= Sceleton ===========
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.innerHTML = `
+      @keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+      }
+    `;
+    document.head.appendChild(style);
+  
+    return () => document.head.removeChild(style);
+  }, []);
 
   // ================= UI =================
   return (
@@ -116,6 +129,18 @@ export default function Home() {
   
         {/* GRID */}
         <div style={styles.grid}>
+
+          {/* 🔥 SKELETON (saat loading & belum ada data) */}
+          {loading && items.length === 0 &&
+            Array.from({ length: 12 }).map((_, i) => (
+              <div key={i} style={styles.skeletonCard}>
+                <div style={styles.skeletonImage}></div>
+                <div style={styles.skeletonTitle}></div>
+              </div>
+            ))
+          }
+        
+          {/* 🔥 DATA */}
           {items.map((item, i) => (
             <div
               key={i}
@@ -126,14 +151,10 @@ export default function Home() {
               <div style={styles.title}>{item.title}</div>
             </div>
           ))}
+        
         </div>
   
-        {loading && (
-          <div style={{ color: "white", textAlign: "center" }}>
-            Loading...
-          </div>
-        )}
-  
+          
         {/* MODAL */}
         {selected && (
           <div style={styles.modalOverlay} onClick={() => setSelected(null)}>
@@ -294,5 +315,25 @@ const styles = {
     border: "none",
     padding: 10,
     borderRadius: 6,
+  },
+
+  skeletonCard: {
+    borderRadius: 10,
+  },
+  
+  skeletonImage: {
+    width: "100%",
+    aspectRatio: "2/3",
+    borderRadius: 10,
+    background: "linear-gradient(90deg, #222 25%, #333 50%, #222 75%)",
+    backgroundSize: "200% 100%",
+    animation: "shimmer 1.5s infinite",
+  },
+  
+  skeletonTitle: {
+    height: 10,
+    marginTop: 6,
+    borderRadius: 4,
+    background: "#222",
   },
 };
