@@ -166,7 +166,10 @@ export default function Home() {
             <div
               key={i}
               className="card-item"
-              style={styles.card, pointerEvents: selected ? "none" : "auto",}
+              style={{
+                styles.card, 
+                pointerEvents: selected ? "none" : "auto",
+              }}
               onClick={() => openDetail(item)}
               onMouseEnter={(e) => {
                 const el = e.currentTarget;
