@@ -72,10 +72,31 @@ export default function Home() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [loading]);
 
+  // close hover
+  const resetHover = () => {
+    const cards = document.querySelectorAll(".card-item");
+  
+    cards.forEach((el) => {
+      el.style.transform = "scale(1)";
+      el.style.zIndex = 1;
+      el.style.boxShadow = "none";
+  
+      const overlay = el.querySelector(".overlay");
+      const info = el.querySelector(".info");
+      const img = el.querySelector("img");
+  
+      if (overlay) overlay.style.opacity = 0;
+      if (info) info.style.opacity = 0;
+      if (img) img.style.filter = "brightness(1)";
+    });
+  };
+
   // ================= OPEN MODAL =================
   const openDetail = async (item) => {
+    resetHover(); // 🔥 penting
     setSelected(item);
     setDetail(null);
+    
 
     const res = await fetch(
       `https://drama-liart.vercel.app/detail?slug=${item.slug}`
@@ -144,6 +165,7 @@ export default function Home() {
           {items.map((item, i) => (
             <div
               key={i}
+              className="card-item"
               style={styles.card}
               onClick={() => openDetail(item)}
               onMouseEnter={(e) => {
