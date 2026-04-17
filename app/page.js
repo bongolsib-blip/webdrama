@@ -88,88 +88,88 @@ export default function Home() {
   // ================= UI =================
   return (
     <div style={styles.page}>
-
-      {/* SEARCH */}
-      <div style={styles.searchBox}>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Cari drama..."
-          style={styles.input}
-        />
-      </div>
-
-      {/* SUGGESTION */}
-      {query && suggestions.length > 0 && (
-        <div style={styles.suggestionBox}>
-          {suggestions.map((item, i) => (
+      <div style={{ width: "100%", maxWidth: 1200 }}>
+        {/* SEARCH */}
+        <div style={styles.searchBox}>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Cari drama..."
+            style={styles.input}
+          />
+        </div>
+  
+        {/* SUGGESTION */}
+        {query && suggestions.length > 0 && (
+          <div style={styles.suggestionBox}>
+            {suggestions.map((item, i) => (
+              <div
+                key={i}
+                style={styles.suggestionItem}
+                onClick={() => openDetail(item)}
+              >
+                {item.title}
+              </div>
+            ))}
+          </div>
+        )}
+  
+        {/* GRID */}
+        <div style={styles.grid}>
+          {items.map((item, i) => (
             <div
               key={i}
-              style={styles.suggestionItem}
+              style={styles.card}
               onClick={() => openDetail(item)}
             >
-              {item.title}
+              <img src={item.thumbnail} style={styles.img} />
+              <div style={styles.title}>{item.title}</div>
             </div>
           ))}
         </div>
-      )}
-
-      {/* GRID */}
-      <div style={styles.grid}>
-        {items.map((item, i) => (
-          <div
-            key={i}
-            style={styles.card}
-            onClick={() => openDetail(item)}
-          >
-            <img src={item.thumbnail} style={styles.img} />
-            <div style={styles.title}>{item.title}</div>
+  
+        {loading && (
+          <div style={{ color: "white", textAlign: "center" }}>
+            Loading...
           </div>
-        ))}
+        )}
+  
+        {/* MODAL */}
+        {selected && (
+          <div style={styles.modalOverlay} onClick={() => setSelected(null)}>
+            <div style={styles.modalBox} onClick={(e) => e.stopPropagation()}>
+  
+              {!detail ? (
+                <p style={{ color: "white" }}>Loading...</p>
+              ) : (
+                <>
+                  <img src={detail.thumbnail} style={styles.modalImg} />
+  
+                  <h2>{detail.title}</h2>
+  
+                  <p style={styles.desc}>{detail.description}</p>
+  
+                  <p>Total Episode: {detail.total_episode}</p>
+  
+                  <div style={styles.btnGroup}>
+                    <Link href={`/detail/${selected.slug}`}>
+                      <button style={styles.playBtn}>▶ Tonton</button>
+                    </Link>
+  
+                    <button
+                      onClick={() => setSelected(null)}
+                      style={styles.closeBtn}
+                    >
+                      Tutup
+                    </button>
+                  </div>
+                </>
+              )}
+  
+            </div>
+          </div>
+        )}
       </div>
-
-      {loading && (
-        <div style={{ color: "white", textAlign: "center" }}>
-          Loading...
-        </div>
-      )}
-
-      {/* MODAL */}
-      {selected && (
-        <div style={styles.modalOverlay} onClick={() => setSelected(null)}>
-          <div style={styles.modalBox} onClick={(e) => e.stopPropagation()}>
-
-            {!detail ? (
-              <p style={{ color: "white" }}>Loading...</p>
-            ) : (
-              <>
-                <img src={detail.thumbnail} style={styles.modalImg} />
-
-                <h2>{detail.title}</h2>
-
-                <p style={styles.desc}>{detail.description}</p>
-
-                <p>Total Episode: {detail.total_episode}</p>
-
-                <div style={styles.btnGroup}>
-                  <Link href={`/detail/${selected.slug}`}>
-                    <button style={styles.playBtn}>▶ Tonton</button>
-                  </Link>
-
-                  <button
-                    onClick={() => setSelected(null)}
-                    style={styles.closeBtn}
-                  >
-                    Tutup
-                  </button>
-                </div>
-              </>
-            )}
-
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
@@ -177,7 +177,15 @@ export default function Home() {
 /* ================= STYLE ================= */
 
 const styles = {
-  page: { background: "#000", minHeight: "100vh", padding: 10 },
+  page: {
+    background: "#000",
+    minHeight: "100vh",
+  
+    display: "flex",
+    justifyContent: "center", // center horizontal
+  
+    padding: 10,
+  },
 
   searchBox: {
     position: "sticky",
