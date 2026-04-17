@@ -146,8 +146,53 @@ export default function Home() {
               key={i}
               style={styles.card}
               onClick={() => openDetail(item)}
+              onMouseEnter={(e) => {
+                const el = e.currentTarget;
+                el.style.transform = "scale(1.08)";
+                el.style.zIndex = 2;
+                el.style.boxShadow = "0 10px 30px rgba(0,0,0,0.6)";
+          
+                const overlay = el.querySelector(".overlay");
+                const info = el.querySelector(".info");
+          
+                if (overlay) overlay.style.opacity = 1;
+                if (info) info.style.opacity = 1;
+          
+                const img = el.querySelector("img");
+                if (img) img.style.filter = "brightness(1.2)";
+              }}
+              onMouseLeave={(e) => {
+                const el = e.currentTarget;
+                el.style.transform = "scale(1)";
+                el.style.zIndex = 1;
+                el.style.boxShadow = "none";
+          
+                const overlay = el.querySelector(".overlay");
+                const info = el.querySelector(".info");
+          
+                if (overlay) overlay.style.opacity = 0;
+                if (info) info.style.opacity = 0;
+          
+                const img = el.querySelector("img");
+                if (img) img.style.filter = "brightness(1)";
+              }}
+              onTouchStart={(e) => {
+                e.currentTarget.style.transform = "scale(0.95)";
+              }}
+              onTouchEnd={(e) => {
+                e.currentTarget.style.transform = "scale(1)";
+              }}
             >
               <img src={item.thumbnail} style={styles.img} />
+          
+              {/* OVERLAY */}
+              <div className="overlay" style={styles.overlay}></div>
+          
+              {/* INFO */}
+              <div className="info" style={styles.info}>
+                {item.tags?.join(", ")}
+              </div>
+          
               <div style={styles.title}>{item.title}</div>
             </div>
           ))}
@@ -246,6 +291,8 @@ const styles = {
 
   card: {
     cursor: "pointer",
+    position: "relative",
+    transition: "transform 0.3s ease, box-shadow 0.3s ease",
   },
 
   img: {
@@ -260,6 +307,7 @@ const styles = {
     color: "white",
     textAlign: "center",
     marginTop: 5,
+    transition: "opacity 0.3s",
   },
 
   modalOverlay: {
@@ -336,5 +384,32 @@ const styles = {
     marginTop: 6,
     borderRadius: 4,
     background: "#222",
+  },
+  overlay: {
+    position: "absolute",
+    inset: 0,
+    borderRadius: 10,
+    background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent)",
+    opacity: 0,
+    transition: "opacity 0.3s",
+  },
+  
+  info: {
+    position: "absolute",
+    bottom: 25,
+    left: 8,
+    right: 8,
+    fontSize: 10,
+    color: "#ccc",
+    opacity: 0,
+    transition: "opacity 0.3s",
+    zIndex: 2,
+  },
+  img: {
+    width: "100%",
+    borderRadius: 10,
+    aspectRatio: "2/3",
+    objectFit: "cover",
+    transition: "filter 0.3s",
   },
 };
