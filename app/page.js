@@ -167,8 +167,8 @@ export default function Home() {
               key={i}
               className="card-item"
               style={{
-                styles.card, 
-                pointerEvents: selected ? "none" : "auto",
+                ...styles.card,
+                pointerEvents: selected ? "none" : "auto", // 🔥 BLOCK INTERAKSI
               }}
               onClick={() => openDetail(item)}
               onMouseEnter={(e) => {
