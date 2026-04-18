@@ -44,7 +44,7 @@ export default function Home() {
     Mystery: [
       "misteri", "rahasia"
     ],
-    "Sci-Fi": [
+    SciFi: [
       "kiamat", "sistem", "dunia lain"
     ],
     Family: [
