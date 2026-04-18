@@ -12,33 +12,18 @@ export default function Home() {
 
   const [loading, setLoading] = useState(false);
 
-  // 🔥 MODAL STATE
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
 
-  // ================= Genre ====================
   const [genre, setGenre] = useState("All");
+
   const genres = [
-    "All",
-    "Romance",
-    "Drama",
-    "Comedy",
-    "Action",
-    "Historical",
-    "Fantasy",
-    "Wuxia",
-    "Xianxia",
-    "Modern",
-    "School",
-    "Youth",
-    "Family",
-    "Business",
-    "Crime",
-    "Mystery",
-    "Thriller",
-    "Sci-Fi",
-    "Supernatural",
+    "All","Romance","Drama","Comedy","Action","Historical","Fantasy",
+    "Wuxia","Xianxia","Modern","School","Youth","Family","Business",
+    "Crime","Mystery","Thriller","Sci-Fi","Supernatural",
   ];
+
+  // ================= FILTER =================
   const filteredItems =
     genre === "All"
       ? items
@@ -47,20 +32,36 @@ export default function Home() {
             t.toLowerCase().includes(genre.toLowerCase())
           )
         );
-  // ================= LOAD LIST =================
+
+  // ================= LOAD DATA =================
   const loadData = async (p = 1) => {
     if (loading) return;
 
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const res = await fetch(
-      `https://drama-liart.vercel.app/list?page=${p}`
-    );
+      const res = await fetch(
+        `https://drama-liart.vercel.app/list?page=${p}`
+      );
 
-    const json = await res.json();
+      const json = await res.json();
+      const newItems = json.data?.items || [];
 
-    setItems((prev) => [...prev, ...(json.data?.items || [])]);
-    setLoading(false);
+      // 🔥 deduplicate by slug
+      setItems((prev) => {
+        const merged = [...prev, ...newItems];
+
+        return merged.filter(
+          (item, index, self) =>
+            index === self.findIndex((t) => t.slug === item.slug)
+        );
+      });
+
+    } catch (err) {
+      console.error("Load error:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -75,12 +76,16 @@ export default function Home() {
     }
 
     const delay = setTimeout(async () => {
-      const res = await fetch(
-        `https://drama-liart.vercel.app/search?q=${query}`
-      );
+      try {
+        const res = await fetch(
+          `https://drama-liart.vercel.app/search?q=${query}`
+        );
 
-      const data = await res.json();
-      setSuggestions(data.items || []);
+        const data = await res.json();
+        setSuggestions(data.items || []);
+      } catch (err) {
+        console.error("Search error:", err);
+      }
     }, 300);
 
     return () => clearTimeout(delay);
@@ -88,72 +93,71 @@ export default function Home() {
 
   // ================= INFINITE SCROLL =================
   useEffect(() => {
-    const handleScroll = () => {
-      if (loading) return;
+    let ticking = false;
 
-      if (
-        window.innerHeight + window.scrollY >=
-        document.body.offsetHeight - 200
-      ) {
-        setPage((p) => p + 1);
-      }
+    const handleScroll = () => {
+      if (ticking || loading) return;
+
+      ticking = true;
+
+      setTimeout(() => {
+        if (
+          window.innerHeight + window.scrollY >=
+          document.body.offsetHeight - 200
+        ) {
+          setPage((p) => p + 1);
+        }
+        ticking = false;
+      }, 200);
     };
 
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, [loading]);
 
-  // close hover
-  const resetHover = () => {
-    const cards = document.querySelectorAll(".card-item");
-  
-    cards.forEach((el) => {
-      el.style.transform = "scale(1)";
-      el.style.zIndex = 1;
-      el.style.boxShadow = "none";
-  
-      const overlay = el.querySelector(".overlay");
-      const info = el.querySelector(".info");
-      const img = el.querySelector("img");
-  
-      if (overlay) overlay.style.opacity = 0;
-      if (info) info.style.opacity = 0;
-      if (img) img.style.filter = "brightness(1)";
-    });
-  };
-
-  // ================= OPEN MODAL =================
+  // ================= MODAL =================
   const openDetail = async (item) => {
-    resetHover(); // 🔥 penting
     setSelected(item);
     setDetail(null);
-    
 
-    const res = await fetch(
-      `https://drama-liart.vercel.app/detail?slug=${item.slug}`
-    );
+    try {
+      const res = await fetch(
+        `https://drama-liart.vercel.app/detail?slug=${item.slug}`
+      );
 
-    const data = await res.json();
-    setDetail(data.data);
+      const data = await res.json();
+      setDetail(data.data);
+    } catch (err) {
+      console.error("Detail error:", err);
+    }
   };
-  // ========= Sceleton ===========
+
+  // lock scroll
   useEffect(() => {
-    const style = document.createElement("style");
-    style.innerHTML = `
-      @keyframes shimmer {
-        0% { background-position: -200% 0; }
-        100% { background-position: 200% 0; }
-      }
-    `;
-    document.head.appendChild(style);
-  
-    return () => document.head.removeChild(style);
+    if (selected) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "auto";
+    }
+
+    return () => (document.body.style.overflow = "auto");
+  }, [selected]);
+
+  // ESC close
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.key === "Escape") setSelected(null);
+    };
+
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
   // ================= UI =================
   return (
     <div style={styles.page}>
       <div style={{ width: "100%", maxWidth: 1200 }}>
+
         {/* SEARCH */}
         <div style={styles.searchBox}>
           <input
@@ -163,6 +167,8 @@ export default function Home() {
             style={styles.input}
           />
         </div>
+
+        {/* GENRE */}
         <div style={styles.genreBar}>
           {genres.map((g) => (
             <button
@@ -177,26 +183,30 @@ export default function Home() {
             </button>
           ))}
         </div>
-  
+
         {/* SUGGESTION */}
         {query && suggestions.length > 0 && (
           <div style={styles.suggestionBox}>
-            {suggestions.map((item, i) => (
+            {suggestions.map((item) => (
               <div
-                key={i}
+                key={item.slug}
                 style={styles.suggestionItem}
-                onClick={() => openDetail(item)}
+                onClick={() => {
+                  openDetail(item);
+                  setQuery("");
+                  setSuggestions([]);
+                }}
               >
                 {item.title}
               </div>
             ))}
           </div>
         )}
-  
+
         {/* GRID */}
         <div style={styles.grid}>
 
-          {/* 🔥 SKELETON (saat loading & belum ada data) */}
+          {/* SKELETON */}
           {loading && items.length === 0 &&
             Array.from({ length: 12 }).map((_, i) => (
               <div key={i} style={styles.skeletonCard}>
@@ -205,93 +215,55 @@ export default function Home() {
               </div>
             ))
           }
-        
-          {/* 🔥 DATA */}
-          {filteredItems.map((item, i) => (
+
+          {/* DATA */}
+          {filteredItems.map((item) => (
             <div
-              key={i}
+              key={item.slug}
               className="card-item"
-              style={{
-                ...styles.card,
-                pointerEvents: selected ? "none" : "auto", // 🔥 BLOCK INTERAKSI
-              }}
+              style={styles.card}
               onClick={() => openDetail(item)}
-              onMouseEnter={(e) => {
-                const el = e.currentTarget;
-                el.style.transform = "scale(1.08)";
-                el.style.zIndex = 2;
-                el.style.boxShadow = "0 10px 30px rgba(0,0,0,0.6)";
-          
-                const overlay = el.querySelector(".overlay");
-                const info = el.querySelector(".info");
-          
-                if (overlay) overlay.style.opacity = 1;
-                if (info) info.style.opacity = 1;
-          
-                const img = el.querySelector("img");
-                if (img) img.style.filter = "brightness(1.2)";
-              }}
-              onMouseLeave={(e) => {
-                const el = e.currentTarget;
-                el.style.transform = "scale(1)";
-                el.style.zIndex = 1;
-                el.style.boxShadow = "none";
-          
-                const overlay = el.querySelector(".overlay");
-                const info = el.querySelector(".info");
-          
-                if (overlay) overlay.style.opacity = 0;
-                if (info) info.style.opacity = 0;
-          
-                const img = el.querySelector("img");
-                if (img) img.style.filter = "brightness(1)";
-              }}
-              onTouchStart={(e) => {
-                e.currentTarget.style.transform = "scale(0.95)";
-              }}
-              onTouchEnd={(e) => {
-                e.currentTarget.style.transform = "scale(1)";
-              }}
             >
-              <img src={item.thumbnail} style={styles.img} />
-          
-              {/* OVERLAY */}
+              <img
+                src={item.thumbnail}
+                style={styles.img}
+                loading="lazy"
+              />
+
               <div className="overlay" style={styles.overlay}></div>
-          
-              {/* INFO */}
+
               <div className="info" style={styles.info}>
                 {item.tags?.join(", ")}
               </div>
-          
+
               <div style={styles.title}>{item.title}</div>
             </div>
           ))}
-        
+
         </div>
-  
-          
+
         {/* MODAL */}
         {selected && (
           <div style={styles.modalOverlay} onClick={() => setSelected(null)}>
             <div style={styles.modalBox} onClick={(e) => e.stopPropagation()}>
-  
+
               {!detail ? (
                 <p style={{ color: "white" }}>Loading...</p>
               ) : (
                 <>
                   <img src={detail.thumbnail} style={styles.modalImg} />
-  
+
                   <h2>{detail.title}</h2>
-  
+
                   <p style={styles.desc}>{detail.description}</p>
-  
+
                   <p>Total Episode: {detail.total_episode}</p>
-  
+
                   <div style={styles.btnGroup}>
                     <Link href={`/detail/${selected.slug}`}>
                       <button style={styles.playBtn}>▶ Tonton</button>
                     </Link>
-  
+
                     <button
                       onClick={() => setSelected(null)}
                       style={styles.closeBtn}
@@ -301,11 +273,33 @@ export default function Home() {
                   </div>
                 </>
               )}
-  
+
             </div>
           </div>
         )}
+
       </div>
+
+      {/* 🔥 HOVER CSS */}
+      <style>{`
+        .card-item:hover {
+          transform: scale(1.08);
+          z-index: 2;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        }
+
+        .card-item:hover .overlay {
+          opacity: 1;
+        }
+
+        .card-item:hover .info {
+          opacity: 1;
+        }
+
+        .card-item:hover img {
+          filter: brightness(1.2);
+        }
+      `}</style>
     </div>
   );
 }
@@ -316,10 +310,8 @@ const styles = {
   page: {
     background: "#000",
     minHeight: "100vh",
-  
     display: "flex",
-    justifyContent: "center", // center horizontal
-  
+    justifyContent: "center",
     padding: 10,
   },
 
@@ -329,7 +321,8 @@ const styles = {
     background: "#000",
     zIndex: 10,
     padding: 10,
-    width: "30%",
+    width: "100%",
+    maxWidth: 400,
   },
 
   input: {
@@ -370,6 +363,7 @@ const styles = {
     borderRadius: 10,
     aspectRatio: "2/3",
     objectFit: "cover",
+    transition: "filter 0.3s",
   },
 
   title: {
@@ -377,7 +371,6 @@ const styles = {
     color: "white",
     textAlign: "center",
     marginTop: 5,
-    transition: "opacity 0.3s",
   },
 
   modalOverlay: {
@@ -387,7 +380,7 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 9999, // 🔥 WAJIB
+    zIndex: 9999,
   },
 
   modalBox: {
@@ -397,10 +390,8 @@ const styles = {
     maxWidth: 400,
     width: "90%",
     color: "white",
-  
     maxHeight: "80vh",
     overflowY: "auto",
-    WebkitOverflowScrolling: "touch",
   },
 
   modalImg: {
@@ -440,7 +431,7 @@ const styles = {
   skeletonCard: {
     borderRadius: 10,
   },
-  
+
   skeletonImage: {
     width: "100%",
     aspectRatio: "2/3",
@@ -449,13 +440,14 @@ const styles = {
     backgroundSize: "200% 100%",
     animation: "shimmer 1.5s infinite",
   },
-  
+
   skeletonTitle: {
     height: 10,
     marginTop: 6,
     borderRadius: 4,
     background: "#222",
   },
+
   overlay: {
     position: "absolute",
     inset: 0,
@@ -464,7 +456,7 @@ const styles = {
     opacity: 0,
     transition: "opacity 0.3s",
   },
-  
+
   info: {
     position: "absolute",
     bottom: 25,
@@ -476,20 +468,14 @@ const styles = {
     transition: "opacity 0.3s",
     zIndex: 2,
   },
-  img: {
-    width: "100%",
-    borderRadius: 10,
-    aspectRatio: "2/3",
-    objectFit: "cover",
-    transition: "filter 0.3s",
-  },
+
   genreBar: {
     display: "flex",
     gap: 10,
     overflowX: "auto",
     padding: "10px 0",
   },
-  
+
   genreBtn: {
     padding: "6px 12px",
     borderRadius: 20,
