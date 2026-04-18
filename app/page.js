@@ -44,7 +44,7 @@ export default function Home() {
     Mystery: [
       "misteri", "rahasia"
     ],
-    SciFi: [
+    Sci-Fi: [
       "kiamat", "sistem", "dunia lain"
     ],
     Family: [
@@ -71,13 +71,45 @@ export default function Home() {
   
     return result.length ? result : ["Other"];
   };
-  const filteredItems =
-    genre === "All"
-      ? items
-      : items.filter((item) =>
-          detectCategories(item).includes(genre)
+  
+  const loadData = async (p = 1, g = genre) => {
+    if (loading) return;
+  
+    try {
+      setLoading(true);
+  
+      const url =
+        g === "All"
+          ? `https://drama-liart.vercel.app/list?page=${p}`
+          : `https://drama-liart.vercel.app/list-by-genre?genre=${g}&page=${p}`;
+  
+      const res = await fetch(url);
+      const json = await res.json();
+  
+      const newItems = json.data?.items || json.data || [];
+  
+      setItems((prev) => {
+        const merged = p === 1 ? newItems : [...prev, ...newItems];
+  
+        return merged.filter(
+          (item, index, self) =>
+            index === self.findIndex((t) => t.slug === item.slug)
         );
+      });
+  
+    } catch (err) {
+      console.error("Load error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
+    setItems([]);
+    setPage(1);
+    loadData(1, genre);
+  }, [genre]);
+  
   // ================= LOAD DATA =================
   const loadData = async (p = 1) => {
     if (loading) return;
@@ -110,7 +142,7 @@ export default function Home() {
   };
 
   useEffect(() => {
-    loadData(page);
+    loadData(page, genre);
   }, [page]);
 
   // ================= SEARCH =================
@@ -262,7 +294,7 @@ export default function Home() {
           }
 
           {/* DATA */}
-          {filteredItems.map((item) => (
+          {items.map((item) => (
             <div
               key={item.slug}
               className="card-item"
