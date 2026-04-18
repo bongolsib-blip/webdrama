@@ -16,6 +16,37 @@ export default function Home() {
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
 
+  // ================= Genre ====================
+  const [genre, setGenre] = useState("All");
+  const genres = [
+    "All",
+    "Romance",
+    "Drama",
+    "Comedy",
+    "Action",
+    "Historical",
+    "Fantasy",
+    "Wuxia",
+    "Xianxia",
+    "Modern",
+    "School",
+    "Youth",
+    "Family",
+    "Business",
+    "Crime",
+    "Mystery",
+    "Thriller",
+    "Sci-Fi",
+    "Supernatural",
+  ];
+  const filteredItems =
+    genre === "All"
+      ? items
+      : items.filter((item) =>
+          item.tags?.some((t) =>
+            t.toLowerCase().includes(genre.toLowerCase())
+          )
+        );
   // ================= LOAD LIST =================
   const loadData = async (p = 1) => {
     if (loading) return;
@@ -132,6 +163,20 @@ export default function Home() {
             style={styles.input}
           />
         </div>
+        <div style={styles.genreBar}>
+          {genres.map((g) => (
+            <button
+              key={g}
+              onClick={() => setGenre(g)}
+              style={{
+                ...styles.genreBtn,
+                background: genre === g ? "red" : "#222",
+              }}
+            >
+              {g}
+            </button>
+          ))}
+        </div>
   
         {/* SUGGESTION */}
         {query && suggestions.length > 0 && (
@@ -162,7 +207,7 @@ export default function Home() {
           }
         
           {/* 🔥 DATA */}
-          {items.map((item, i) => (
+          {filteredItems.map((item, i) => (
             <div
               key={i}
               className="card-item"
@@ -437,5 +482,20 @@ const styles = {
     aspectRatio: "2/3",
     objectFit: "cover",
     transition: "filter 0.3s",
+  },
+  genreBar: {
+    display: "flex",
+    gap: 10,
+    overflowX: "auto",
+    padding: "10px 0",
+  },
+  
+  genreBtn: {
+    padding: "6px 12px",
+    borderRadius: 20,
+    border: "none",
+    color: "white",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
   },
 };
