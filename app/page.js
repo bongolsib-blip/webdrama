@@ -81,7 +81,7 @@ export default function Home() {
       const url =
         g === "All"
           ? `https://drama-liart.vercel.app/list?page=${p}`
-          : `https://drama-liart.vercel.app/list-by-genre?genre=${g}&page=${p}`;
+          : `https://drama-liart.vercel.app/genre/${g}&page=${p}`;
   
       const res = await fetch(url);
       const json = await res.json();
