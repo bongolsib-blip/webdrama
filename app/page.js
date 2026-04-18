@@ -71,32 +71,37 @@ export default function Home() {
   
     return result.length ? result : ["Other"];
   };
-  
-  const loadData = async (p = 1, g = genre) => {
+  const filteredItems =
+    genre === "All"
+      ? items
+      : items.filter((item) =>
+          detectCategories(item).includes(genre)
+        );
+
+  // ================= LOAD DATA =================
+  const loadData = async (p = 1) => {
     if (loading) return;
-  
+
     try {
       setLoading(true);
-  
-      const url =
-        g === "All"
-          ? `https://drama-liart.vercel.app/list?page=${p}`
-          : `https://drama-liart.vercel.app/genre/${g}`;
-  
-      const res = await fetch(url);
+
+      const res = await fetch(
+        `https://drama-liart.vercel.app/list?page=${p}`
+      );
+
       const json = await res.json();
-  
-      const newItems = json.data?.items || json.data || [];
-  
+      const newItems = json.data?.items || [];
+
+      // 🔥 deduplicate by slug
       setItems((prev) => {
-        const merged = p === 1 ? newItems : [...prev, ...newItems];
-  
+        const merged = [...prev, ...newItems];
+
         return merged.filter(
           (item, index, self) =>
             index === self.findIndex((t) => t.slug === item.slug)
         );
       });
-  
+
     } catch (err) {
       console.error("Load error:", err);
     } finally {
@@ -105,14 +110,7 @@ export default function Home() {
   };
 
   useEffect(() => {
-    setItems([]);
-    setPage(1);
-    loadData(1, genre);
-  }, [genre]);
-  
-  // ================= LOAD DATA =================
-  useEffect(() => {
-    loadData(page, genre);
+    loadData(page);
   }, [page]);
 
   // ================= SEARCH =================
@@ -264,7 +262,7 @@ export default function Home() {
           }
 
           {/* DATA */}
-          {items.map((item) => (
+          {filteredItems.map((item) => (
             <div
               key={item.slug}
               className="card-item"
