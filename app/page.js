@@ -18,19 +18,64 @@ export default function Home() {
   const [genre, setGenre] = useState("All");
 
   const genres = [
-    "All","Romance","Drama","Comedy","Action","Historical","Fantasy",
-    "Wuxia","Xianxia","Modern","School","Youth","Family","Business",
-    "Crime","Mystery","Thriller","Sci-Fi","Supernatural",
+    "All","Romance","Drama","Comedy","Action","Fantasy", "Family","Business",
+    "Crime","Mystery","Sci-Fi",
   ];
 
+  const categoryMap = {
+    Romance: [
+      "romantis", "romansa", "cinta", "nikah", "pernikahan", "love"
+    ],
+    Drama: [
+      "drama", "konflik", "keluarga", "penyesalan"
+    ],
+    Action: [
+      "aksi", "perang", "balas dendam", "serangan balik", "dewa perang"
+    ],
+    Fantasy: [
+      "fantasi", "sihir", "kultivasi", "dewa", "iblis"
+    ],
+    Comedy: [
+      "komedi", "lucu", "kocak"
+    ],
+    Crime: [
+      "mafia", "kriminal", "penjara"
+    ],
+    Mystery: [
+      "misteri", "rahasia"
+    ],
+    SciFi: [
+      "kiamat", "sistem", "dunia lain"
+    ],
+    Family: [
+      "keluarga", "ayah", "ibu", "anak"
+    ],
+    Business: [
+      "ceo", "miliarder", "bos", "kantoran"
+    ],
+  };
+
   // ================= FILTER =================
+  const detectCategories = (item) => {
+    const text = (
+      (item.title || "") + " " + (item.tags || []).join(" ")
+    ).toLowerCase();
+  
+    let result = [];
+  
+    for (const [genre, keywords] of Object.entries(categoryMap)) {
+      if (keywords.some((k) => text.includes(k))) {
+        result.push(genre);
+      }
+    }
+  
+    return result.length ? result : ["Other"];
+  };
   const filteredItems =
     genre === "All"
       ? items
       : items.filter((item) =>
-          item.tags?.some((t) =>
-            t.toLowerCase().includes(genre.toLowerCase())
-          )
+          detectCategories(item).includes(genre)
         );
 
   // ================= LOAD DATA =================
