@@ -111,36 +111,6 @@ export default function Home() {
   }, [genre]);
   
   // ================= LOAD DATA =================
-  const loadData = async (p = 1) => {
-    if (loading) return;
-
-    try {
-      setLoading(true);
-
-      const res = await fetch(
-        `https://drama-liart.vercel.app/list?page=${p}`
-      );
-
-      const json = await res.json();
-      const newItems = json.data?.items || [];
-
-      // 🔥 deduplicate by slug
-      setItems((prev) => {
-        const merged = [...prev, ...newItems];
-
-        return merged.filter(
-          (item, index, self) =>
-            index === self.findIndex((t) => t.slug === item.slug)
-        );
-      });
-
-    } catch (err) {
-      console.error("Load error:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
     loadData(page, genre);
   }, [page]);
