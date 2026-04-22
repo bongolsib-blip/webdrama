@@ -18,26 +18,30 @@ export default function PlayerPage() {
   const [isChanging, setIsChanging] = useState(false);
   const [nextVideo, setNextVideo] = useState(null);
   
-  // State untuk Animasi
+  // State Animasi & Feedback
   const [animClass, setAnimClass] = useState({ opacity: 1, transform: "translateY(0)" });
+  const [ripple, setRipple] = useState(null);
 
   const videoRef = useRef(null);
   const touchStartY = useRef(0);
+  const lastTap = useRef(0);
   const abortControllerRef = useRef(null);
 
+  // 1. FETCH DETAIL
   useEffect(() => {
     fetch(`https://drama-liart.vercel.app/detail?slug=${slug}`)
       .then((r) => r.json())
       .then((r) => setDetail(r.data));
   }, [slug]);
 
+  // 2. FUNGSI LOAD EPISODE (Dengan Animasi & Abort)
   const loadEpisode = async (ep, direction = "next") => {
     if (!detail || ep < 1 || ep > detail.total_episode || isChanging) return;
     
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
 
-    // Jalankan Animasi Keluar (Slide Out)
+    // Animasi Keluar
     setAnimClass({
       opacity: 0,
       transform: direction === "next" ? "translateY(-100px)" : "translateY(100px)",
@@ -58,7 +62,7 @@ export default function PlayerPage() {
         streamUrl.searchParams.set("url", data.video_url); 
         setVideoUrl(streamUrl.toString());
         
-        // Kembalikan Animasi (Slide In) setelah URL siap
+        // Animasi Masuk
         setTimeout(() => {
           setAnimClass({ opacity: 1, transform: "translateY(0)" });
           setIsChanging(false);
@@ -72,6 +76,35 @@ export default function PlayerPage() {
     }
   };
 
+  // 3. DETEKSI DOUBLE TAP (Maju/Mundur 5 detik)
+  const handleVideoClick = (e) => {
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (now - lastTap.current < DOUBLE_TAP_DELAY) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const width = rect.width;
+
+      if (clickX < width / 2) {
+        video.currentTime = Math.max(0, video.currentTime - 5);
+        showRipple("backward");
+      } else {
+        video.currentTime = Math.min(video.duration, video.currentTime + 5);
+        showRipple("forward");
+      }
+    }
+    lastTap.current = now;
+  };
+
+  const showRipple = (type) => {
+    setRipple(type);
+    setTimeout(() => setRipple(null), 500);
+  };
+
+  // 4. PREFETCH NEXT EPISODE
   useEffect(() => {
     if (!episode || !detail || episode >= detail.total_episode) return;
     const nextEp = episode + 1;
@@ -86,10 +119,12 @@ export default function PlayerPage() {
       }).catch(() => {});
   }, [episode, detail]);
 
+  // 5. INITIAL LOAD
   useEffect(() => {
     if (detail) loadEpisode(startEp);
   }, [detail]);
 
+  // 6. VIDEO SOURCE UPDATE
   useEffect(() => {
     if (!videoUrl || !videoRef.current) return;
     videoRef.current.src = videoUrl;
@@ -97,16 +132,17 @@ export default function PlayerPage() {
     videoRef.current.play().catch(() => {});
   }, [videoUrl]);
 
+  // 7. SWIPE & SCROLL LISTENER
   useEffect(() => {
     const handleWheel = (e) => {
-      if (showList) return;
+      if (showList || isChanging) return;
       if (e.deltaY > 50) loadEpisode(episode + 1, "next");
       else if (e.deltaY < -50) loadEpisode(episode - 1, "prev");
     };
 
     const handleTouchStart = (e) => (touchStartY.current = e.touches[0].clientY);
     const handleTouchEnd = (e) => {
-      if (showList) return;
+      if (showList || isChanging) return;
       const diff = touchStartY.current - e.changedTouches[0].clientY;
       if (diff > 80) loadEpisode(episode + 1, "next");
       else if (diff < -80) loadEpisode(episode - 1, "prev");
@@ -126,7 +162,7 @@ export default function PlayerPage() {
 
   return (
     <div style={styles.page}>
-      {/* HEADER Tetap Static */}
+      {/* HEADER */}
       <div style={styles.header}>
         <button onClick={() => router.back()} style={styles.btn}>←</button>
         <div style={{ textAlign: "center", flex: 1 }}>
@@ -136,50 +172,65 @@ export default function PlayerPage() {
         <button onClick={() => setShowList(true)} style={styles.btn}>☰</button>
       </div>
 
-      {/* CONTAINER VIDEO DENGAN ANIMASI */}
-      <div style={{ 
-        ...styles.videoContainer, 
-        ...animClass, 
-        transition: "all 0.4s ease-out" 
-      }}>
+      {/* VIDEO CONTAINER DENGAN ANIMASI & CLICK HANDLER */}
+      <div 
+        style={{ 
+          ...styles.videoContainer, 
+          ...animClass, 
+          transition: "all 0.4s ease-out",
+          position: "relative" 
+        }}
+        onClick={handleVideoClick}
+      >
         <video
           ref={videoRef}
           controls
           autoPlay
+          playsInline
           onEnded={() => loadEpisode(episode + 1, "next")}
           style={styles.video}
         />
+
+        {/* FEEDBACK DOUBLE TAP */}
+        {ripple && (
+          <div style={{
+            ...styles.ripple,
+            left: ripple === "forward" ? "70%" : "30%"
+          }}>
+            {ripple === "forward" ? ">> 5s" : "<< 5s"}
+          </div>
+        )}
       </div>
 
-      {/* PRELOADER */}
+      {/* PRELOAD HIDDEN VIDEO */}
       {nextVideo && <video key={nextVideo} src={nextVideo} preload="auto" style={{ display: "none" }} />}
 
-      {/* NAVIGATION */}
+      {/* NAVIGASI MANUAL */}
       <div style={styles.control}>
-        <button style={styles.navBtn} onClick={() => loadEpisode(episode - 1, "prev")}>◀</button>
-        <button style={styles.navBtn} onClick={() => loadEpisode(episode + 1, "next")}>▶</button>
+        <button style={styles.navBtn} onClick={(e) => { e.stopPropagation(); loadEpisode(episode - 1, "prev"); }}>◀</button>
+        <button style={styles.navBtn} onClick={(e) => { e.stopPropagation(); loadEpisode(episode + 1, "next"); }}>▶</button>
       </div>
 
-      {/* MODAL EPISODE (Seperti sebelumnya) */}
+      {/* MODAL LIST EPISODE */}
       {showList && (
         <div style={styles.overlay} onClick={() => setShowList(false)}>
-           <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
-              <div style={styles.sheetHeader}>
-                <span style={{ color: "white" }}>Pilih Episode</span>
-                <button onClick={() => setShowList(false)} style={styles.closeBtn}>✕</button>
-              </div>
-              <div style={styles.sheetGrid}>
-                {Array.from({ length: detail.total_episode }).map((_, i) => (
-                  <button
-                    key={i+1}
-                    onClick={() => { loadEpisode(i+1, i+1 > episode ? "next" : "prev"); setShowList(false); }}
-                    style={{ ...styles.epBtn, background: (i+1) === episode ? "red" : "#333" }}
-                  >
-                    {i+1}
-                  </button>
-                ))}
-              </div>
-           </div>
+          <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.sheetHeader}>
+              <span style={{ color: "white" }}>Pilih Episode</span>
+              <button onClick={() => setShowList(false)} style={styles.closeBtn}>✕</button>
+            </div>
+            <div style={styles.sheetGrid}>
+              {Array.from({ length: detail.total_episode }).map((_, i) => (
+                <button
+                  key={i+1}
+                  onClick={() => { loadEpisode(i+1, (i+1) > episode ? "next" : "prev"); setShowList(false); }}
+                  style={{ ...styles.epBtn, background: (i+1) === episode ? "red" : "#333" }}
+                >
+                  {i+1}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -187,20 +238,21 @@ export default function PlayerPage() {
 }
 
 const styles = {
-  page: { position: "fixed", inset: 0, background: "black", overflow: "hidden" },
+  page: { position: "fixed", inset: 0, background: "black", overflow: "hidden", display: "flex", flexDirection: "column" },
   header: { height: 60, display: "flex", alignItems: "center", padding: "0 15px", color: "white", position: "absolute", top: 0, left: 0, right: 0, zIndex: 20, background: "linear-gradient(to bottom, rgba(0,0,0,0.9), transparent)" },
   videoContainer: { width: "100%", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" },
   video: { width: "100%", height: "100%", objectFit: "contain" },
-  btn: { background: "none", border: "none", color: "white", fontSize: 24 },
+  btn: { background: "none", border: "none", color: "white", fontSize: 24, cursor: "pointer" },
   title: { fontSize: 14, fontWeight: "bold", color: "white" },
   sub: { fontSize: 11, color: "#ccc" },
+  ripple: { position: "absolute", top: "50%", transform: "translate(-50%, -50%)", background: "rgba(255,255,255,0.2)", color: "white", padding: "15px 20px", borderRadius: "50%", pointerEvents: "none", zIndex: 30 },
   control: { position: "absolute", bottom: 40, width: "100%", display: "flex", justifyContent: "center", gap: 50, zIndex: 10 },
-  navBtn: { background: "rgba(255,255,255,0.15)", border: "none", color: "white", padding: "12px 25px", borderRadius: "30px" },
+  navBtn: { background: "rgba(255,255,255,0.15)", border: "none", color: "white", padding: "12px 25px", borderRadius: "30px", cursor: "pointer" },
   loading: { height: "100vh", background: "black", color: "white", display: "flex", justifyContent: "center", alignItems: "center" },
   overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 },
   sheet: { width: "85%", maxWidth: "400px", background: "#111", borderRadius: "15px" },
   sheetHeader: { padding: 15, borderBottom: "1px solid #222", display: "flex", justifyContent: "space-between" },
-  sheetGrid: { padding: 15, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 },
-  epBtn: { padding: 12, color: "white", border: "none", borderRadius: "8px" },
+  sheetGrid: { padding: 15, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, maxHeight: "50vh", overflowY: "auto" },
+  epBtn: { padding: 12, color: "white", border: "none", borderRadius: "8px", cursor: "pointer" },
   closeBtn: { background: "none", border: "none", color: "white", fontSize: 20 }
 };
