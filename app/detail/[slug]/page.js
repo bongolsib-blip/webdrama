@@ -34,20 +34,17 @@ export default function PlayerPage() {
 
   const loadEpisode = async (ep) => {
     if (!detail) return;
-
     setEpisode(ep);
-
-    const res = await fetch(
-      `https://drama-liart.vercel.app/video?slug=${slug}&ep=${ep}`
-    );
-
+  
+    const res = await fetch(`https://drama-liart.vercel.app/video?slug=${slug}&ep=${ep}`);
     const data = await res.json();
-    
-    // 🔥 UBAH DI SINI: Jangan pakai link mentah, tapi lewatkan ke proxy /stream
+  
     if (data.video_url) {
-      const encodedUrl = encodeURIComponent(data.video_url);
-      const proxiedUrl = `https://drama-liart.vercel.app/stream?url=${encodedUrl}`;
-      setVideoUrl(proxiedUrl);
+      // Gunakan URLSearchParams untuk handle encoding otomatis yang benar
+      const streamUrl = new URL("https://drama-liart.vercel.app/stream");
+      streamUrl.searchParams.set("url", data.video_url); 
+      
+      setVideoUrl(streamUrl.toString());
     }
   };
   // VIDEO LOAD
