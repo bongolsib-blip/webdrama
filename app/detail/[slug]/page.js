@@ -40,15 +40,16 @@ export default function PlayerPage() {
     
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
-
+  
+    // Animasi Keluar
     setAnimClass({
       opacity: 0,
       transform: direction === "next" ? "translateY(-100px)" : "translateY(100px)",
     });
-
+  
     setIsChanging(true);
     setEpisode(ep);
-
+  
     try {
       const res = await fetch(
         `https://drama-liart.vercel.app/video?slug=${slug}&ep=${ep}`,
@@ -57,10 +58,10 @@ export default function PlayerPage() {
       const data = await res.json();
       
       if (data.video_url) {
-        const streamUrl = new URL("https://drama-liart.vercel.app/stream");
-        streamUrl.searchParams.set("url", data.video_url); 
-        setVideoUrl(streamUrl.toString());
+        // LANGSUNG PAKAI URL DARI VIDEO (TANPA /STREAM)
+        setVideoUrl(data.video_url); 
         
+        // Animasi Masuk kembali
         setTimeout(() => {
           setAnimClass({ opacity: 1, transform: "translateY(0)" });
           setIsChanging(false);
@@ -68,6 +69,7 @@ export default function PlayerPage() {
       }
     } catch (e) {
       if (e.name !== "AbortError") {
+        console.error("Gagal load video:", e);
         setIsChanging(false);
         setAnimClass({ opacity: 1, transform: "translateY(0)" });
       }
@@ -120,9 +122,8 @@ export default function PlayerPage() {
       .then((r) => r.json())
       .then((data) => {
         if (data.video_url) {
-          const streamUrl = new URL("https://drama-liart.vercel.app/stream");
-          streamUrl.searchParams.set("url", data.video_url);
-          setNextVideo(streamUrl.toString());
+          // Langsung simpan URL asli untuk preload
+          setNextVideo(data.video_url);
         }
       }).catch(() => {});
   }, [episode, detail]);
