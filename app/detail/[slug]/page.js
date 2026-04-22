@@ -18,7 +18,7 @@ export default function PlayerPage() {
   const [isChanging, setIsChanging] = useState(false);
   const [nextVideo, setNextVideo] = useState(null);
   
-  // State Animasi & Feedback Tap
+  // State untuk Animasi & Feedback Tap
   const [animClass, setAnimClass] = useState({ opacity: 1, transform: "translateY(0)" });
   const [ripple, setRipple] = useState(null);
 
@@ -27,29 +27,34 @@ export default function PlayerPage() {
   const lastTap = useRef(0);
   const abortControllerRef = useRef(null);
 
-  // 1. FETCH DETAIL
+  // --- 1. FUNGSI FEEDBACK RIPPLE (Mencegah Error) ---
+  const showRipple = (type) => {
+    setRipple(type);
+    setTimeout(() => setRipple(null), 600);
+  };
+
+  // --- 2. FETCH DETAIL ---
   useEffect(() => {
     fetch(`https://drama-liart.vercel.app/detail?slug=${slug}`)
       .then((r) => r.json())
       .then((r) => setDetail(r.data));
   }, [slug]);
 
-  // 2. LOAD EPISODE (Dengan Animasi & Abort)
+  // --- 3. LOAD EPISODE ---
   const loadEpisode = async (ep, direction = "next") => {
     if (!detail || ep < 1 || ep > detail.total_episode || isChanging) return;
     
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
-  
-    // Animasi Keluar
+
     setAnimClass({
       opacity: 0,
       transform: direction === "next" ? "translateY(-100px)" : "translateY(100px)",
     });
-  
+
     setIsChanging(true);
     setEpisode(ep);
-  
+
     try {
       const res = await fetch(
         `https://drama-liart.vercel.app/video?slug=${slug}&ep=${ep}`,
@@ -58,10 +63,9 @@ export default function PlayerPage() {
       const data = await res.json();
       
       if (data.video_url) {
-        // LANGSUNG PAKAI URL DARI VIDEO (TANPA /STREAM)
+        // Langsung URL asli tanpa stream (seperti permintaanmu)
         setVideoUrl(data.video_url); 
         
-        // Animasi Masuk kembali
         setTimeout(() => {
           setAnimClass({ opacity: 1, transform: "translateY(0)" });
           setIsChanging(false);
@@ -69,26 +73,25 @@ export default function PlayerPage() {
       }
     } catch (e) {
       if (e.name !== "AbortError") {
-        console.error("Gagal load video:", e);
         setIsChanging(false);
         setAnimClass({ opacity: 1, transform: "translateY(0)" });
       }
     }
   };
 
-  // 3. DETEKSI DOUBLE TAP (Maju/Mundur 5 detik)
-  const handleDoubleTap = (e) => {
+  // --- 4. HANDLE DOUBLE TAP & PLAY/PAUSE ---
+  const handleTapLogic = (e) => {
     const now = Date.now();
     const DOUBLE_TAP_DELAY = 300;
     const video = videoRef.current;
     if (!video) return;
-  
+
     if (now - lastTap.current < DOUBLE_TAP_DELAY) {
-      // --- LOGIKA DOUBLE TAP (Maju/Mundur) ---
+      // DOUBLE TAP DETECTED
       const rect = e.currentTarget.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
       const width = rect.width;
-  
+
       if (clickX < width / 2) {
         video.currentTime = Math.max(0, video.currentTime - 5);
         showRipple("backward");
@@ -96,46 +99,30 @@ export default function PlayerPage() {
         video.currentTime = Math.min(video.duration, video.currentTime + 5);
         showRipple("forward");
       }
-      // Bersihkan timer agar tidak terdeteksi sebagai triple tap
-      lastTap.current = 0; 
+      lastTap.current = 0; // Reset agar tidak jadi triple tap
     } else {
-      // --- LOGIKA SINGLE TAP (Play/Pause) ---
-      // Kita beri sedikit delay untuk memastikan ini bukan awal dari double tap
-      setTimeout(() => {
-          const doubleTapJustHappened = lastTap.current === 0;
-          if (!doubleTapJustHappened) {
-              if (video.paused) {
-                  video.play().catch(() => {});
-              } else {
-                  video.pause();
-              }
-          }
-      }, DOUBLE_TAP_DELAY);
-      
+      // SINGLE TAP DETECTED (Play/Pause)
       lastTap.current = now;
+      setTimeout(() => {
+        if (lastTap.current !== 0) {
+          if (video.paused) video.play().catch(() => {});
+          else video.pause();
+          lastTap.current = 0;
+        }
+      }, DOUBLE_TAP_DELAY);
     }
   };
 
-  // 4. PREFETCH NEXT EPISODE
+  // --- 5. PREFETCH & AUTO LOAD ---
   useEffect(() => {
     if (!episode || !detail || episode >= detail.total_episode) return;
-    const nextEp = episode + 1;
-    fetch(`https://drama-liart.vercel.app/video?slug=${slug}&ep=${nextEp}`)
+    fetch(`https://drama-liart.vercel.app/video?slug=${slug}&ep=${episode + 1}`)
       .then((r) => r.json())
-      .then((data) => {
-        if (data.video_url) {
-          // Langsung simpan URL asli untuk preload
-          setNextVideo(data.video_url);
-        }
-      }).catch(() => {});
+      .then((data) => { if (data.video_url) setNextVideo(data.video_url); });
   }, [episode, detail]);
 
-  // 5. INITIAL LOAD
-  useEffect(() => {
-    if (detail) loadEpisode(startEp);
-  }, [detail]);
+  useEffect(() => { if (detail) loadEpisode(startEp); }, [detail]);
 
-  // 6. VIDEO SOURCE UPDATE
   useEffect(() => {
     if (!videoUrl || !videoRef.current) return;
     videoRef.current.src = videoUrl;
@@ -143,14 +130,13 @@ export default function PlayerPage() {
     videoRef.current.play().catch(() => {});
   }, [videoUrl]);
 
-  // 7. SWIPE & SCROLL LISTENER
+  // --- 6. SWIPE GESTURE ---
   useEffect(() => {
     const handleWheel = (e) => {
       if (showList || isChanging) return;
       if (e.deltaY > 50) loadEpisode(episode + 1, "next");
       else if (e.deltaY < -50) loadEpisode(episode - 1, "prev");
     };
-
     const handleTouchStart = (e) => (touchStartY.current = e.touches[0].clientY);
     const handleTouchEnd = (e) => {
       if (showList || isChanging) return;
@@ -158,9 +144,8 @@ export default function PlayerPage() {
       if (diff > 80) loadEpisode(episode + 1, "next");
       else if (diff < -80) loadEpisode(episode - 1, "prev");
     };
-
     window.addEventListener("wheel", handleWheel);
-    window.addEventListener("touchstart", handleTouchStart);
+    window.addEventListener("touchstart", handleTouchStart, { passive: true });
     window.addEventListener("touchend", handleTouchEnd);
     return () => {
       window.removeEventListener("wheel", handleWheel);
@@ -183,7 +168,7 @@ export default function PlayerPage() {
         <button onClick={() => setShowList(true)} style={styles.btn}>☰</button>
       </div>
 
-      {/* VIDEO CONTAINER */}
+      {/* VIDEO AREA */}
       <div style={{ ...styles.videoContainer, ...animClass, transition: "all 0.4s ease-out" }}>
         <video
           ref={videoRef}
@@ -194,13 +179,10 @@ export default function PlayerPage() {
           style={styles.video}
         />
 
-        {/* LAYER TRANSPARAN UNTUK DOUBLE TAP */}
-        <div style={styles.tapLayer} onClick={handleDoubleTap}>
-            <div style={{ flex: 1, height: "100%" }} /> {/* Sisi Kiri */}
-            <div style={{ flex: 1, height: "100%" }} /> {/* Sisi Kanan */}
-        </div>
+        {/* LAYER KLIK (Z-Index di bawah kontrol asli sedikit) */}
+        <div style={styles.tapLayer} onClick={handleTapLogic} />
 
-        {/* RIPPLE FEEDBACK */}
+        {/* FEEDBACK VISUAL */}
         {ripple && (
           <div style={{ ...styles.ripple, left: ripple === "forward" ? "75%" : "25%" }}>
             {ripple === "forward" ? ">> 5s" : "<< 5s"}
@@ -208,10 +190,10 @@ export default function PlayerPage() {
         )}
       </div>
 
-      {/* PRELOADER */}
+      {/* HIDDEN PRELOAD */}
       {nextVideo && <video key={nextVideo} src={nextVideo} preload="auto" style={{ display: "none" }} />}
 
-      {/* MANUAL CONTROLS */}
+      {/* MANUAL NAVIGATION */}
       <div style={styles.control}>
         <button style={styles.navBtn} onClick={(e) => { e.stopPropagation(); loadEpisode(episode - 1, "prev"); }}>◀</button>
         <button style={styles.navBtn} onClick={(e) => { e.stopPropagation(); loadEpisode(episode + 1, "next"); }}>▶</button>
@@ -248,16 +230,7 @@ const styles = {
   header: { height: 60, display: "flex", alignItems: "center", padding: "0 15px", color: "white", position: "absolute", top: 0, left: 0, right: 0, zIndex: 100, background: "linear-gradient(to bottom, rgba(0,0,0,0.9), transparent)" },
   videoContainer: { width: "100%", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" },
   video: { width: "100%", height: "100%", objectFit: "contain", zIndex: 1 },
-  tapLayer: {
-    position: "absolute",
-    top: 60,       // Di bawah header agar tombol Back tetap bisa diklik
-    bottom: 80,    // KUNCI: Beri jarak agar tombol Play/Pause/Seekbar asli tetap bisa diklik
-    left: 0,
-    right: 0,
-    display: "flex",
-    zIndex: 50,    // Berada di atas video
-    background: "transparent",
-  },
+  tapLayer: { position: "absolute", inset: "60px 0 100px 0", zIndex: 50, background: "transparent" },
   ripple: { position: "absolute", top: "50%", transform: "translate(-50%, -50%)", background: "rgba(255,255,255,0.3)", color: "white", padding: "20px", borderRadius: "50%", pointerEvents: "none", zIndex: 110, fontSize: "14px", fontWeight: "bold" },
   btn: { background: "none", border: "none", color: "white", fontSize: 24, cursor: "pointer" },
   title: { fontSize: 14, fontWeight: "bold", color: "white" },
