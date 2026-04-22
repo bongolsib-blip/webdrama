@@ -42,9 +42,14 @@ export default function PlayerPage() {
     );
 
     const data = await res.json();
-    setVideoUrl(data.video_url);
+    
+    // 🔥 UBAH DI SINI: Jangan pakai link mentah, tapi lewatkan ke proxy /stream
+    if (data.video_url) {
+      const encodedUrl = encodeURIComponent(data.video_url);
+      const proxiedUrl = `https://drama-liart.vercel.app/stream?url=${encodedUrl}`;
+      setVideoUrl(proxiedUrl);
+    }
   };
-
   // VIDEO LOAD
   useEffect(() => {
     if (!videoUrl || !videoRef.current) return;
