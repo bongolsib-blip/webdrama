@@ -79,20 +79,30 @@ export default function PlayerPage() {
     const now = Date.now();
     const DOUBLE_TAP_DELAY = 300;
     const video = videoRef.current;
-    if (!video) return;
-
+  
+    // Cek apakah video ada, sudah siap (readyState), dan punya durasi
+    if (!video || video.readyState < 1 || isNaN(video.duration)) return;
+  
     if (now - lastTap.current < DOUBLE_TAP_DELAY) {
       const rect = e.currentTarget.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
       const width = rect.width;
-
+  
+      // Simpan posisi waktu saat ini ke variabel
+      let newTime = video.currentTime;
+  
       if (clickX < width / 2) {
-        video.currentTime = Math.max(0, video.currentTime - 5);
+        // Mundur 5 detik
+        newTime = Math.max(0, newTime - 5);
         showRipple("backward");
       } else {
-        video.currentTime = Math.min(video.duration, video.currentTime + 5);
+        // Maju 5 detik
+        newTime = Math.min(video.duration, newTime + 5);
         showRipple("forward");
       }
+  
+      // Eksekusi perubahan waktu
+      video.currentTime = newTime;
     }
     lastTap.current = now;
   };
