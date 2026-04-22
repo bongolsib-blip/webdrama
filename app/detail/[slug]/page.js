@@ -81,37 +81,39 @@ export default function PlayerPage() {
     const now = Date.now();
     const DOUBLE_TAP_DELAY = 300;
     const video = videoRef.current;
-  
-    // Cek apakah video ada, sudah siap (readyState), dan punya durasi
-    if (!video || video.readyState < 1 || isNaN(video.duration)) return;
+    if (!video) return;
   
     if (now - lastTap.current < DOUBLE_TAP_DELAY) {
+      // --- LOGIKA DOUBLE TAP (Maju/Mundur) ---
       const rect = e.currentTarget.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
       const width = rect.width;
   
-      // Simpan posisi waktu saat ini ke variabel
-      let newTime = video.currentTime;
-  
       if (clickX < width / 2) {
-        // Mundur 5 detik
-        newTime = Math.max(0, newTime - 5);
+        video.currentTime = Math.max(0, video.currentTime - 5);
         showRipple("backward");
       } else {
-        // Maju 5 detik
-        newTime = Math.min(video.duration, newTime + 5);
+        video.currentTime = Math.min(video.duration, video.currentTime + 5);
         showRipple("forward");
       }
-  
-      // Eksekusi perubahan waktu
-      video.currentTime = newTime;
+      // Bersihkan timer agar tidak terdeteksi sebagai triple tap
+      lastTap.current = 0; 
+    } else {
+      // --- LOGIKA SINGLE TAP (Play/Pause) ---
+      // Kita beri sedikit delay untuk memastikan ini bukan awal dari double tap
+      setTimeout(() => {
+          const doubleTapJustHappened = lastTap.current === 0;
+          if (!doubleTapJustHappened) {
+              if (video.paused) {
+                  video.play().catch(() => {});
+              } else {
+                  video.pause();
+              }
+          }
+      }, DOUBLE_TAP_DELAY);
+      
+      lastTap.current = now;
     }
-    lastTap.current = now;
-  };
-
-  const showRipple = (type) => {
-    setRipple(type);
-    setTimeout(() => setRipple(null), 600);
   };
 
   // 4. PREFETCH NEXT EPISODE
@@ -246,7 +248,16 @@ const styles = {
   header: { height: 60, display: "flex", alignItems: "center", padding: "0 15px", color: "white", position: "absolute", top: 0, left: 0, right: 0, zIndex: 100, background: "linear-gradient(to bottom, rgba(0,0,0,0.9), transparent)" },
   videoContainer: { width: "100%", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" },
   video: { width: "100%", height: "100%", objectFit: "contain", zIndex: 1 },
-  tapLayer: { position: "absolute", inset: "60px 0 100px 0", display: "flex", zIndex: 50, background: "transparent" },
+  tapLayer: {
+    position: "absolute",
+    top: 60,       // Di bawah header agar tombol Back tetap bisa diklik
+    bottom: 80,    // KUNCI: Beri jarak agar tombol Play/Pause/Seekbar asli tetap bisa diklik
+    left: 0,
+    right: 0,
+    display: "flex",
+    zIndex: 50,    // Berada di atas video
+    background: "transparent",
+  },
   ripple: { position: "absolute", top: "50%", transform: "translate(-50%, -50%)", background: "rgba(255,255,255,0.3)", color: "white", padding: "20px", borderRadius: "50%", pointerEvents: "none", zIndex: 110, fontSize: "14px", fontWeight: "bold" },
   btn: { background: "none", border: "none", color: "white", fontSize: 24, cursor: "pointer" },
   title: { fontSize: 14, fontWeight: "bold", color: "white" },
