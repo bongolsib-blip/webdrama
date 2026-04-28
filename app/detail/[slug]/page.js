@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import Hls from "hls.js";
 
 export default function PlayerPage() {
   const params = useParams();
@@ -53,7 +54,7 @@ export default function PlayerPage() {
     });
 
     setIsChanging(true);
-    setEpisode(ep);
+    
 
     try {
       const res = await fetch(
@@ -65,6 +66,7 @@ export default function PlayerPage() {
       if (data.video_url) {
         // Langsung URL asli tanpa stream (seperti permintaanmu)
         setVideoUrl(data.video_url); 
+        setEpisode(ep);
         
         setTimeout(() => {
           setAnimClass({ opacity: 1, transform: "translateY(0)" });
@@ -124,10 +126,34 @@ export default function PlayerPage() {
   useEffect(() => { if (detail) loadEpisode(startEp); }, [detail]);
 
   useEffect(() => {
-    if (!videoUrl || !videoRef.current) return;
-    videoRef.current.src = videoUrl;
-    videoRef.current.load();
-    videoRef.current.play().catch(() => {});
+    const video = videoRef.current;
+    if (!video || !videoUrl) return;
+  
+    // hapus instance lama
+    if (video.hls) {
+      video.hls.destroy();
+    }
+  
+    if (videoUrl.includes(".m3u8") && Hls.isSupported()) {
+      const hls = new Hls();
+      hls.loadSource(videoUrl);
+      hls.attachMedia(video);
+  
+      video.hls = hls;
+  
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(() => {});
+      });
+  
+    } else {
+      video.src = videoUrl;
+      video.load();
+      video.play().catch(() => {});
+    }
+  
+    return () => {
+      if (video.hls) video.hls.destroy();
+    };
   }, [videoUrl]);
 
   // --- 6. SWIPE GESTURE ---
@@ -191,7 +217,7 @@ export default function PlayerPage() {
       </div>
 
       {/* HIDDEN PRELOAD */}
-      {nextVideo && <video key={nextVideo} src={nextVideo} preload="auto" style={{ display: "none" }} />}
+      
 
       {/* MANUAL NAVIGATION */}
       <div style={styles.control}>
