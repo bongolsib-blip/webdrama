@@ -27,6 +27,8 @@ export default function PlayerPage() {
   const touchStartY = useRef(0);
   const lastTap = useRef(0);
   const abortControllerRef = useRef(null);
+  const [nextVideo, setNextVideo] = useState(null);
+  const [isPrefetching, setIsPrefetching] = useState(false);
 
   // --- 1. FUNGSI FEEDBACK RIPPLE (Mencegah Error) ---
   const showRipple = (type) => {
@@ -44,6 +46,9 @@ export default function PlayerPage() {
   // --- 3. LOAD EPISODE ---
   const loadEpisode = async (ep, direction = "next") => {
     if (!detail || ep < 1 || ep > detail.total_episode || isChanging) return;
+
+    // 🔥 RESET next video (WAJIB)
+    setNextVideo(null);
     
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
@@ -114,6 +119,46 @@ export default function PlayerPage() {
       }, DOUBLE_TAP_DELAY);
     }
   };
+
+  // reload ketika video mau habis
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !detail) return;
+  
+    const handleTimeUpdate = async () => {
+      if (
+        video.duration &&
+        video.currentTime > video.duration - 10 && // 🔥 10 detik sebelum habis
+        !isPrefetching &&
+        !nextVideo &&
+        episode < detail.total_episode
+      ) {
+        setIsPrefetching(true);
+  
+        try {
+          const res = await fetch(
+            `https://drama-liart.vercel.app/video?slug=${slug}&ep=${episode + 1}`
+          );
+          const data = await res.json();
+  
+          if (data.video_url) {
+            setNextVideo(data.video_url);
+            console.log("✅ Next video ready");
+          }
+        } catch (e) {
+          console.log("Prefetch error", e);
+        }
+  
+        setIsPrefetching(false);
+      }
+    };
+  
+    video.addEventListener("timeupdate", handleTimeUpdate);
+  
+    return () => {
+      video.removeEventListener("timeupdate", handleTimeUpdate);
+    };
+  }, [episode, detail, nextVideo, isPrefetching]);
 
   // --- 5. PREFETCH & AUTO LOAD ---
   useEffect(() => {
@@ -201,7 +246,21 @@ export default function PlayerPage() {
           controls
           autoPlay
           playsInline
-          onEnded={() => loadEpisode(episode + 1, "next")}
+          onEnded={() => {
+            if (nextVideo) {
+              // 🔥 langsung pakai tanpa fetch lagi
+              setVideoUrl(nextVideo);
+              setNextVideo(null);
+              setEpisode((prev) => prev + 1);
+            } else {
+              // fallback normal
+              loadEpisode(episode + 1, "next");
+            }
+          }}
+          onError={() => {
+            console.log("🔥 video expired, refreshing...");
+            loadEpisode(episode); // ambil ulang URL fresh
+          }}
           style={styles.video}
         />
 
