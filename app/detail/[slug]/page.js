@@ -17,7 +17,6 @@ export default function PlayerPage() {
   const [episode, setEpisode] = useState(startEp);
   const [showList, setShowList] = useState(false);
   const [isChanging, setIsChanging] = useState(false);
-  const [nextVideo, setNextVideo] = useState(null);
   
   // State untuk Animasi & Feedback Tap
   const [animClass, setAnimClass] = useState({ opacity: 1, transform: "translateY(0)" });
