@@ -370,15 +370,15 @@ const styles = {
   epBtn: { padding: 12, color: "white", border: "none", borderRadius: "8px" },
   closeBtn: { background: "none", border: "none", color: "white", fontSize: 20 }
   speedIndicator: {
-  position: "absolute",
-  bottom: 120,
-  left: "50%",
-  transform: "translateX(-50%)",
-  background: "rgba(0,0,0,0.6)",
-  color: "white",
-  padding: "6px 12px",
-  borderRadius: "10px",
-  fontSize: 14,
-  zIndex: 120
-},
+    position: "absolute",
+    bottom: 120,
+    left: "50%",
+    transform: "translateX(-50%)",
+    background: "rgba(0,0,0,0.6)",
+    color: "white",
+    padding: "6px 12px",
+    borderRadius: "10px",
+    fontSize: 14,
+    zIndex: 120
+  },
 };
