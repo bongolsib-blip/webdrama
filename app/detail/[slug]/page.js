@@ -368,7 +368,7 @@ const styles = {
   sheetHeader: { padding: 15, borderBottom: "1px solid #222", display: "flex", justifyContent: "space-between" },
   sheetGrid: { padding: 15, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, maxHeight: "50vh", overflowY: "auto" },
   epBtn: { padding: 12, color: "white", border: "none", borderRadius: "8px" },
-  closeBtn: { background: "none", border: "none", color: "white", fontSize: 20 }
+  closeBtn: { background: "none", border: "none", color: "white", fontSize: 20 },
   speedIndicator: {
     position: "absolute",
     bottom: 120,
