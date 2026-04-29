@@ -30,6 +30,7 @@ export default function PlayerPage() {
   const [isPrefetching, setIsPrefetching] = useState(false);
   const holdTimer = useRef(null);
   const [isHolding, setIsHolding] = useState(false);
+  const isHoldingRef = useRef(false);
 
   // --- 1. FUNGSI FEEDBACK RIPPLE (Mencegah Error) ---
   const showRipple = (type) => {
@@ -89,6 +90,11 @@ export default function PlayerPage() {
 
   // --- 4. HANDLE DOUBLE TAP & PLAY/PAUSE ---
   const handleTapLogic = (e) => {
+    // 🔥 kalau tadi HOLD → abaikan click
+    if (isHoldingRef.current) {
+      isHoldingRef.current = false;
+      return;
+    }
     const now = Date.now();
     const DOUBLE_TAP_DELAY = 300;
     const video = videoRef.current;
@@ -123,13 +129,16 @@ export default function PlayerPage() {
 
   // hold untuk mempercepat 2x
   const handleHoldStart = () => {
-    // delay supaya tidak bentrok dengan tap biasa
+    isHoldingRef.current = false;
+  
     holdTimer.current = setTimeout(() => {
       const video = videoRef.current;
       if (!video) return;
   
-      video.playbackRate = 2.0; // 🔥 percepat
+      video.playbackRate = 2;
       setIsHolding(true);
+  
+      isHoldingRef.current = true; // 🔥 tandai ini HOLD
     }, 200);
   };
   
@@ -139,7 +148,7 @@ export default function PlayerPage() {
     const video = videoRef.current;
     if (!video) return;
   
-    video.playbackRate = 1.0; // 🔥 normal
+    video.playbackRate = 1;
     setIsHolding(false);
   };
 
