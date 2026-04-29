@@ -28,6 +28,8 @@ export default function PlayerPage() {
   const abortControllerRef = useRef(null);
   const [nextVideo, setNextVideo] = useState(null);
   const [isPrefetching, setIsPrefetching] = useState(false);
+  const holdTimer = useRef(null);
+  const [isHolding, setIsHolding] = useState(false);
 
   // --- 1. FUNGSI FEEDBACK RIPPLE (Mencegah Error) ---
   const showRipple = (type) => {
@@ -117,6 +119,28 @@ export default function PlayerPage() {
         }
       }, DOUBLE_TAP_DELAY);
     }
+  };
+
+  // hold untuk mempercepat 2x
+  const handleHoldStart = () => {
+    // delay supaya tidak bentrok dengan tap biasa
+    holdTimer.current = setTimeout(() => {
+      const video = videoRef.current;
+      if (!video) return;
+  
+      video.playbackRate = 2.0; // 🔥 percepat
+      setIsHolding(true);
+    }, 200);
+  };
+  
+  const handleHoldEnd = () => {
+    clearTimeout(holdTimer.current);
+  
+    const video = videoRef.current;
+    if (!video) return;
+  
+    video.playbackRate = 1.0; // 🔥 normal
+    setIsHolding(false);
   };
 
   // reload ketika video mau habis
@@ -264,7 +288,18 @@ export default function PlayerPage() {
         />
 
         {/* LAYER KLIK (Z-Index di bawah kontrol asli sedikit) */}
-        <div style={styles.tapLayer} onClick={handleTapLogic} />
+        <div
+          style={styles.tapLayer}
+          onClick={handleTapLogic}
+        
+          onMouseDown={handleHoldStart}
+          onMouseUp={handleHoldEnd}
+          onMouseLeave={handleHoldEnd}
+        
+          onTouchStart={handleHoldStart}
+          onTouchEnd={handleHoldEnd}
+          onTouchCancel={handleHoldEnd}
+        />
 
         {/* FEEDBACK VISUAL */}
         {ripple && (
@@ -273,6 +308,12 @@ export default function PlayerPage() {
           </div>
         )}
       </div>
+
+      {isHolding && (
+        <div style={styles.speedIndicator}>
+          2x
+        </div>
+      )}
 
       {/* HIDDEN PRELOAD */}
       
@@ -328,4 +369,16 @@ const styles = {
   sheetGrid: { padding: 15, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, maxHeight: "50vh", overflowY: "auto" },
   epBtn: { padding: 12, color: "white", border: "none", borderRadius: "8px" },
   closeBtn: { background: "none", border: "none", color: "white", fontSize: 20 }
+  speedIndicator: {
+  position: "absolute",
+  bottom: 120,
+  left: "50%",
+  transform: "translateX(-50%)",
+  background: "rgba(0,0,0,0.6)",
+  color: "white",
+  padding: "6px 12px",
+  borderRadius: "10px",
+  fontSize: 14,
+  zIndex: 120
+},
 };
