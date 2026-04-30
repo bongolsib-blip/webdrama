@@ -48,6 +48,7 @@ export default function PlayerPage() {
 
   // --- 3. LOAD EPISODE ---
   const loadEpisode = async (ep, direction = "next") => {
+    setVideoError(false);
     if (!detail || ep < 1 || ep > detail.total_episode || isChanging) return;
 
     // 🔥 RESET next video (WAJIB)
@@ -75,27 +76,32 @@ export default function PlayerPage() {
       if (data.video_url) {
     
         // 🔥 DETEKSI PROXY
-        if (data.video_url.includes("/stream/proxy")) {
-          console.log("❌ proxy blocked");
-    
-          setVideoError(true);
-          setVideoUrl("");
-          setIsChanging(false); // jangan lupa ini
-          return;
+       if (data.video_url.includes("/stream/proxy")) {
+        console.log("❌ proxy blocked");
+      
+        const video = videoRef.current;
+        if (video) {
+          video.pause();
+          video.removeAttribute("src");
+          video.load();
         }
-    
-        setVideoError(false);
-        setVideoUrl(data.video_url);
-        setEpisode(ep);
-    
-        setTimeout(() => {
-          setAnimClass({ opacity: 1, transform: "translateY(0)" });
-          setIsChanging(false);
-        }, 300);
+      
+        setVideoError(true);
+        setVideoUrl("");
+        setIsChanging(false);
+        return;
       }
     
     } catch (e) {
       if (e.name !== "AbortError") {
+    
+        const video = videoRef.current;
+        if (video) {
+          video.pause();
+          video.removeAttribute("src");
+          video.load();
+        }
+    
         setIsChanging(false);
         setAnimClass({ opacity: 1, transform: "translateY(0)" });
         setVideoError(true);
@@ -304,16 +310,18 @@ export default function PlayerPage() {
               loadEpisode(episode + 1, "next");
             }
           }}
-          onError={() => {
-            console.log("❌ video gagal");
-          
-            setVideoError(true);
-          
-            // coba refresh 1x
-            setTimeout(() => {
-              loadEpisode(episode);
-            }, 1000);
-          }}
+         onError={() => {
+          console.log("❌ video gagal");
+        
+          const video = videoRef.current;
+          if (video) {
+            video.pause();
+            video.removeAttribute("src");
+            video.load();
+          }
+        
+          setVideoError(true);
+        }}
           style={styles.video}
         />
 
@@ -341,7 +349,10 @@ export default function PlayerPage() {
 
         {/* LAYER KLIK (Z-Index di bawah kontrol asli sedikit) */}
         <div
-          style={styles.tapLayer}
+          style={{
+            ...styles.tapLayer,
+            pointerEvents: videoError ? "none" : "auto"
+          }}
           onClick={handleTapLogic}
         
           onMouseDown={handleHoldStart}
