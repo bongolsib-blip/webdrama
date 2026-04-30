@@ -47,67 +47,83 @@ export default function PlayerPage() {
   }, [slug]);
 
   // --- 3. LOAD EPISODE ---
-  const loadEpisode = async (ep, direction = "next") => {
-    setVideoError(false);
-    if (!detail || ep < 1 || ep > detail.total_episode || isChanging) return;
+ const loadEpisode = async (ep, direction = "next") => {
+  setVideoError(false);
 
-    // 🔥 RESET next video (WAJIB)
-    setNextVideo(null);
-    
-    if (abortControllerRef.current) abortControllerRef.current.abort();
-    abortControllerRef.current = new AbortController();
+  if (!detail || ep < 1 || ep > detail.total_episode || isChanging) return;
 
-    setAnimClass({
-      opacity: 0,
-      transform: direction === "next" ? "translateY(-100px)" : "translateY(100px)",
-    });
+  setNextVideo(null);
 
-    setIsChanging(true);
-    
+  if (abortControllerRef.current) abortControllerRef.current.abort();
+  abortControllerRef.current = new AbortController();
 
-    try {
-      const res = await fetch(
-        `https://drama-liart.vercel.app/video?slug=${slug}&ep=${ep}`,
-        { signal: abortControllerRef.current.signal }
-      );
-    
-      const data = await res.json();
-    
-      if (data.video_url) {
-    
-        // 🔥 DETEKSI PROXY
-       if (data.video_url.includes("/stream/proxy")) {
+  setAnimClass({
+    opacity: 0,
+    transform: direction === "next"
+      ? "translateY(-100px)"
+      : "translateY(100px)",
+  });
+
+  setIsChanging(true);
+
+  try {
+    const res = await fetch(
+      `https://drama-liart.vercel.app/video?slug=${slug}&ep=${ep}`,
+      { signal: abortControllerRef.current.signal }
+    );
+
+    const data = await res.json();
+
+    if (data.video_url) {
+
+      // 🔥 DETEKSI PROXY
+      if (data.video_url.includes("/stream/proxy")) {
         console.log("❌ proxy blocked");
-      
+
         const video = videoRef.current;
         if (video) {
           video.pause();
           video.removeAttribute("src");
           video.load();
         }
-      
+
         setVideoError(true);
         setVideoUrl("");
         setIsChanging(false);
         return;
       }
-    
-    } catch (e) {
-      if (e.name !== "AbortError") {
-    
-        const video = videoRef.current;
-        if (video) {
-          video.pause();
-          video.removeAttribute("src");
-          video.load();
-        }
-    
-        setIsChanging(false);
+
+      // ✅ NORMAL VIDEO
+      setVideoUrl(data.video_url);
+      setEpisode(ep);
+
+      setTimeout(() => {
         setAnimClass({ opacity: 1, transform: "translateY(0)" });
-        setVideoError(true);
-      }
+        setIsChanging(false);
+      }, 300);
+
+    } else {
+      // 🔥 kalau API tidak kasih video_url
+      setVideoError(true);
+      setIsChanging(false);
     }
-  };
+
+  } catch (e) {
+    if (e.name !== "AbortError") {
+
+      const video = videoRef.current;
+      if (video) {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      }
+
+      setIsChanging(false);
+      setAnimClass({ opacity: 1, transform: "translateY(0)" });
+      setVideoError(true);
+    }
+  }
+};
 
   // --- 4. HANDLE DOUBLE TAP & PLAY/PAUSE ---
   const handleTapLogic = (e) => {
