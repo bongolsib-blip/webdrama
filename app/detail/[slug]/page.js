@@ -440,7 +440,7 @@ const styles = {
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
-    zIndex: 200,
+    zIndex: 999,
   },
   
   errorBox: {
