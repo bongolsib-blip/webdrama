@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import Footer from "../components/Footer";
+import Footer from "./components/Footer";
 
 export default function Home() {
   const [items, setItems] = useState([]);
