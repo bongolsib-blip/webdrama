@@ -8,6 +8,7 @@ export default function PlayerPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [videoError, setVideoError] = useState(false);
 
   const slug = params.slug;
   const startEp = parseInt(searchParams.get("ep") || "1");
@@ -71,9 +72,20 @@ export default function PlayerPage() {
       const data = await res.json();
       
       if (data.video_url) {
-        // Langsung URL asli tanpa stream (seperti permintaanmu)
-        setVideoUrl(data.video_url); 
+
+        // 🔥 DETEKSI PROXY (BIANG KEROK 403)
+        if (data.video_url.includes("/stream/proxy")) {
+          console.log("❌ proxy blocked");
+      
+          setVideoError(true);   // tampilkan UI error
+          setVideoUrl("");       // kosongkan video
+          return;
+        }
+      
+        setVideoError(false);    // reset error
+        setVideoUrl(data.video_url);
         setEpisode(ep);
+      }
         
         setTimeout(() => {
           setAnimClass({ opacity: 1, transform: "translateY(0)" });
@@ -290,11 +302,39 @@ export default function PlayerPage() {
             }
           }}
           onError={() => {
-            console.log("🔥 video expired, refreshing...");
-            loadEpisode(episode); // ambil ulang URL fresh
+            console.log("❌ video gagal");
+          
+            setVideoError(true);
+          
+            // coba refresh 1x
+            setTimeout(() => {
+              loadEpisode(episode);
+            }, 1000);
           }}
           style={styles.video}
         />
+
+        {videoError && (
+          <div style={styles.errorOverlay}>
+            <div style={styles.errorBox}>
+              <p style={{ marginBottom: 10 }}>Video tidak dapat diputar</p>
+        
+              <button
+                onClick={() => loadEpisode(episode)}
+                style={styles.retryBtn}
+              >
+                🔄 Coba Lagi
+              </button>
+        
+              <button
+                onClick={() => router.push("/")}
+                style={styles.homeBtn}
+              >
+                ⬅ Kembali ke Home
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* LAYER KLIK (Z-Index di bawah kontrol asli sedikit) */}
         <div
@@ -389,5 +429,39 @@ const styles = {
     borderRadius: "10px",
     fontSize: 14,
     zIndex: 120
+  },
+  errorOverlay: {
+    position: "absolute",
+    inset: 0,
+    background: "rgba(0,0,0,0.85)",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 200,
+  },
+  
+  errorBox: {
+    textAlign: "center",
+    color: "white"
+  },
+  
+  retryBtn: {
+    margin: 5,
+    padding: "10px 20px",
+    background: "orange",
+    border: "none",
+    borderRadius: "8px",
+    color: "white",
+    cursor: "pointer"
+  },
+  
+  homeBtn: {
+    margin: 5,
+    padding: "10px 20px",
+    background: "red",
+    border: "none",
+    borderRadius: "8px",
+    color: "white",
+    cursor: "pointer"
   },
 };
