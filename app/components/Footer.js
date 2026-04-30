@@ -7,7 +7,7 @@ export default function Footer() {
         <div style={styles.hero}>
           <h2>Nonton Drama Gratis Subtitle Bahasa Indonesia</h2>
           <p>
-            Temukan short drama terbaru, streaming cepat, dan update episode lengkap langsung dari Narto Drama.
+            Temukan short drama terbaru, streaming cepat, dan update episode lengkap tanpa download aplikasi.
           </p>
         </div>
 
@@ -16,12 +16,9 @@ export default function Footer() {
 
           {/* BRAND */}
           <div>
-            <img
-              src="https://narto-drama.com/narto-drama-logo-compressed.png"
-              style={{ width: 120 }}
-            />
+            
             <p style={styles.text}>
-              Narto Drama adalah platform streaming drama pendek dengan subtitle Bahasa Indonesia.
+              Web Drama adalah platform streaming drama pendek dengan subtitle Bahasa Indonesia.
             </p>
           </div>
 
@@ -29,9 +26,9 @@ export default function Footer() {
           <div>
             <h4>Jalan Pintas</h4>
             <div style={styles.links}>
-              <a href="/">Beranda</a>
-              <a href="/featured">Unggulan</a>
-              <a href="/popular">Populer</a>
+              <a >Beranda</a>
+              <a >Unggulan</a>
+              <a >Populer</a>
             </div>
           </div>
 
@@ -66,7 +63,7 @@ export default function Footer() {
 
         {/* BOTTOM */}
         <div style={styles.bottom}>
-          © 2026 Narto Drama
+          © 2026 BongolSIb
         </div>
 
       </div>
