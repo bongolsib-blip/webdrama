@@ -69,33 +69,36 @@ export default function PlayerPage() {
         `https://drama-liart.vercel.app/video?slug=${slug}&ep=${ep}`,
         { signal: abortControllerRef.current.signal }
       );
+    
       const data = await res.json();
-      
+    
       if (data.video_url) {
-
-        // 🔥 DETEKSI PROXY (BIANG KEROK 403)
+    
+        // 🔥 DETEKSI PROXY
         if (data.video_url.includes("/stream/proxy")) {
           console.log("❌ proxy blocked");
-      
-          setVideoError(true);   // tampilkan UI error
-          setVideoUrl("");       // kosongkan video
+    
+          setVideoError(true);
+          setVideoUrl("");
+          setIsChanging(false); // jangan lupa ini
           return;
         }
-      
-        setVideoError(false);    // reset error
+    
+        setVideoError(false);
         setVideoUrl(data.video_url);
         setEpisode(ep);
-      }
-        
+    
         setTimeout(() => {
           setAnimClass({ opacity: 1, transform: "translateY(0)" });
           setIsChanging(false);
         }, 300);
       }
+    
     } catch (e) {
       if (e.name !== "AbortError") {
         setIsChanging(false);
         setAnimClass({ opacity: 1, transform: "translateY(0)" });
+        setVideoError(true);
       }
     }
   };
