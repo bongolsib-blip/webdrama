@@ -90,6 +90,7 @@ export default function PlayerPage() {
         setVideoError(true);
         setVideoUrl("");
         setIsChanging(false);
+        setAnimClass({ opacity: 1, transform: "translateY(0)" });
         return;
       }
 
@@ -330,6 +331,7 @@ export default function PlayerPage() {
           console.log("❌ video gagal");
         
           const video = videoRef.current;
+           setAnimClass({ opacity: 1, transform: "translateY(0)" });
           if (video) {
             video.pause();
             video.removeAttribute("src");
