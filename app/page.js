@@ -515,6 +515,7 @@ const styles = {
   },
 
   genreBar: {
+    position: "sticky",
     display: "flex",
     gap: 10,
     overflowX: "auto",
