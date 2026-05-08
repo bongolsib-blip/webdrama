@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Footer from "./components/Footer";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
+  const router = useRouter();
   const [items, setItems] = useState([]);
   const [page, setPage] = useState(1);
 
@@ -215,16 +217,13 @@ export default function Home() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleFullSearch(); // Tekan Enter untuk Full Search
+                if (e.key === "Enter") handleFullSearch();
               }}
               placeholder="Cari drama..."
               style={styles.input}
             />
             {query && (
-              <button 
-                onClick={handleFullSearch}
-                style={styles.fullSearchBtn}
-              >
+              <button onClick={handleFullSearch} style={styles.fullSearchBtn}>
                 Cari Lengkap
               </button>
             )}
@@ -404,83 +403,55 @@ const styles = {
     padding: 10,
   },
 
-  searchContainer: {
-    position: "sticky",
-    top: 0,
-    zIndex: 100,
-    background: "#000",
-    padding: "10px 0",
-    width: "100%",
+  searchContainer: { 
+    position: "sticky", 
+    top: 0, 
+    zIndex: 100, 
+    background: "#000", 
+    padding: "10px 0", 
+    width: "100%" 
   },
-  searchBox: {
-    display: "flex",
-    gap: 10,
-    padding: "0 10px",
-    maxWidth: 600,
-    margin: "0 auto",
+  searchBox: { 
+    display: "flex", 
+    gap: 10, 
+    padding: "0 10px", 
+    maxWidth: 600, 
+    margin: "0 auto" 
   },
-  fullSearchBtn: {
-    background: "red",
-    color: "white",
-    border: "none",
-    borderRadius: 10,
-    padding: "0 15px",
-    cursor: "pointer",
-    fontWeight: "bold",
-    whiteSpace: "nowrap",
+  input: { 
+    flex: 1, 
+    padding: 12, 
+    borderRadius: 10, 
+    border: "none", 
+    outline: "none", 
+    fontSize: 16 
   },
-  suggestionBox: {
-    position: "absolute",
-    left: 10,
-    right: 10,
-    maxWidth: 580,
-    margin: "5px auto 0",
-    background: "#111",
-    borderRadius: 10,
-    border: "1px solid #333",
-    boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
-    overflow: "hidden",
+  fullSearchBtn: { 
+    background: "red", 
+    color: "white", 
+    border: "none", 
+    borderRadius: 10, 
+    padding: "0 15px", 
+    cursor: "pointer", 
+    fontWeight: "bold" 
   },
-  suggestionItem: {
-    padding: "12px 15px",
-    color: "white",
-    borderBottom: "1px solid #222",
-    cursor: "pointer",
-    fontSize: 14,
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    transition: "background 0.2s",
+  suggestionBox: { 
+    position: "absolute", 
+    left: 10, 
+    right: 10, 
+    maxWidth: 580, 
+    margin: "5px auto 0", 
+    background: "#111", 
+    borderRadius: 10, 
+    border: "1px solid #333", 
+    overflow: "hidden" 
   },
-
-  searchBox: {
-    position: "sticky",
-    top: 0,
-    background: "#000",
-    zIndex: 10,
-    padding: 10,
-    width: "100%",
-    maxWidth: 400,
-  },
-
-  input: {
-    width: "100%",
-    padding: 12,
-    borderRadius: 10,
-    border: "none",
-  },
-
-  suggestionBox: {
-    background: "#111",
-    borderRadius: 10,
-    marginTop: 5,
-  },
-
-  suggestionItem: {
-    padding: 10,
-    color: "white",
-    borderBottom: "1px solid #222",
-    cursor: "pointer",
+  suggestionItem: { 
+    padding: "12px 15px", 
+    color: "white", 
+    borderBottom: "1px solid #222", 
+    cursor: "pointer", 
+    fontSize: 14 
   },
 
   grid: {
