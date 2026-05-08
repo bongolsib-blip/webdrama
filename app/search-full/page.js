@@ -1,429 +1,404 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
-function SearchContent() {
-  const searchParams = useSearchParams();
-  const query = searchParams.get("q") || "";
+const API = "https://drama-liart.vercel.app";
 
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(true);
+// =========================
+// VIDEO PLAYER (HLS)
+// =========================
+function VideoPlayer({ videoUrl }) {
+  const videoRef = useRef(null);
+  const hlsRef = useRef(null);
 
-  // MODAL
-  const [selected, setSelected] = useState(null);
-  const [detail, setDetail] = useState(null);
-
-  // ================= SEARCH =================
   useEffect(() => {
-    if (!query) {
-      setLoading(false);
-      return;
+    if (!videoUrl || !videoRef.current) return;
+
+    const video = videoRef.current;
+
+    // Bersihkan HLS instance sebelumnya
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
     }
 
-    const fetchResults = async () => {
+    // Wrap lewat proxy backend agar tidak CORS error
+    const proxiedUrl = `${API}/stream?url=${encodeURIComponent(videoUrl)}`;
+
+    const loadHls = async () => {
+      const Hls = (await import("hls.js")).default;
+
+      if (Hls.isSupported()) {
+        const hls = new Hls({
+          enableWorker: false,
+        });
+        hlsRef.current = hls;
+        hls.loadSource(proxiedUrl);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play().catch(() => {});
+        });
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          console.error("HLS error:", data);
+        });
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        // Safari: native HLS support
+        video.src = proxiedUrl;
+        video.play().catch(() => {});
+      } else {
+        // Fallback MP4
+        video.src = proxiedUrl;
+        video.play().catch(() => {});
+      }
+    };
+
+    loadHls();
+
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [videoUrl]);
+
+  return (
+    <video
+      ref={videoRef}
+      controls
+      style={{
+        width: "100%",
+        borderRadius: 10,
+        background: "#000",
+        maxHeight: "60vh",
+      }}
+    />
+  );
+}
+
+// =========================
+// MAIN PAGE
+// =========================
+export default function DetailPage() {
+  const params = useParams();
+  const router = useRouter();
+
+  // slug dari URL — bisa saja masih "import?..."
+  const rawSlug = decodeURIComponent(params.slug || "");
+
+  const [detail, setDetail] = useState(null);
+  const [finalSlug, setFinalSlug] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const [currentEp, setCurrentEp] = useState(1);
+  const [videoUrl, setVideoUrl] = useState(null);
+  const [videoLoading, setVideoLoading] = useState(false);
+  const [totalEpisodes, setTotalEpisodes] = useState(0);
+
+  // =========================
+  // FETCH DETAIL
+  // =========================
+  useEffect(() => {
+    if (!rawSlug) return;
+
+    const fetchDetail = async () => {
       setLoading(true);
+      setError(null);
 
       try {
         const res = await fetch(
-          `https://drama-liart.vercel.app/search-full?q=${encodeURIComponent(
-            query
-          )}`
+          `${API}/detail?slug=${encodeURIComponent(rawSlug)}`
         );
-
         const data = await res.json();
 
-        setResults(data.items || []);
+        if (data.data?.error) {
+          setError(data.data.error);
+          return;
+        }
+
+        // 🔥 Simpan final_slug — ini yang dipakai untuk fetch video
+        setFinalSlug(data.final_slug);
+        setDetail(data.data);
+        setTotalEpisodes(data.data.total_episode || 0);
+
       } catch (err) {
-        console.error("Fetch error:", err);
-        setResults([]);
+        setError("Gagal memuat detail drama.");
       } finally {
         setLoading(false);
       }
     };
 
-    fetchResults();
-  }, [query]);
+    fetchDetail();
+  }, [rawSlug]);
 
-  // ================= OPEN DETAIL =================
-  const openDetail = async (item) => {
-  setSelected(item);
-  setDetail(null);
+  // =========================
+  // FETCH VIDEO
+  // =========================
+  const fetchVideo = async (ep) => {
+    if (!finalSlug) return;
 
-  try {
-    const res = await fetch(
-      `https://drama-liart.vercel.app/detail?slug=${encodeURIComponent(item.slug)}`
-    );
+    setVideoLoading(true);
+    setVideoUrl(null);
 
-    const data = await res.json();
+    try {
+      const res = await fetch(`${API}/video?slug=${finalSlug}&ep=${ep}`);
+      const data = await res.json();
 
-    // 🔥 FIX: simpan final_slug ke dalam detail
-    setDetail({
-      ...data.data,
-      final_slug: data.final_slug  // ← ambil dari root response
-    });
-
-  } catch (err) {
-    console.error("Detail error:", err);
-  }
-};
-
-  // ================= LOCK SCROLL =================
-  useEffect(() => {
-    if (selected) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "auto";
-    }
-
-    return () => {
-      document.body.style.overflow = "auto";
-    };
-  }, [selected]);
-
-  // ================= ESC CLOSE =================
-  useEffect(() => {
-    const handleKey = (e) => {
-      if (e.key === "Escape") {
-        setSelected(null);
+      if (data.video_url) {
+        setVideoUrl(data.video_url);
+      } else {
+        alert("Video tidak tersedia untuk episode ini.");
       }
-    };
+    } catch (err) {
+      alert("Gagal memuat video.");
+    } finally {
+      setVideoLoading(false);
+    }
+  };
 
-    window.addEventListener("keydown", handleKey);
+  // Auto-load episode 1 setelah finalSlug tersedia
+  useEffect(() => {
+    if (finalSlug) {
+      fetchVideo(1);
+    }
+  }, [finalSlug]);
 
-    return () => {
-      window.removeEventListener("keydown", handleKey);
-    };
-  }, []);
+  const handleEpClick = (ep) => {
+    setCurrentEp(ep);
+    fetchVideo(ep);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
-  return (
-    <>
-      {/* TITLE */}
-      <h1 style={styles.heading}>
-        {loading
-          ? `Mencari "${query}"...`
-          : `Ditemukan ${results.length} hasil untuk "${query}"`}
-      </h1>
-
-      {/* GRID */}
-      <div style={styles.grid}>
-
-        {/* SKELETON */}
-        {loading &&
-          Array.from({ length: 12 }).map((_, i) => (
-            <div key={i} style={styles.skeletonCard}>
-              <div style={styles.skeletonImage}></div>
-              <div style={styles.skeletonTitle}></div>
-            </div>
-          ))}
-
-        {/* DATA */}
-        {!loading &&
-          results.map((item) => (
-            <div
-              key={item.slug}
-              className="card-item"
-              style={styles.card}
-              onClick={() => openDetail(item)}
-            >
-              <img
-                src={item.thumbnail}
-                alt={item.title}
-                loading="lazy"
-                style={styles.img}
-              />
-
-              <div className="overlay" style={styles.overlay}></div>
-
-              <div className="info" style={styles.info}>
-                {item.tags?.join(", ")}
-              </div>
-
-              <div style={styles.title}>
-                {item.title}
-              </div>
-            </div>
-          ))}
-
-      </div>
-
-      {/* EMPTY */}
-      {!loading && results.length === 0 && (
-        <p style={styles.empty}>
-          Drama tidak ditemukan.
-        </p>
-      )}
-
-      {/* MODAL */}
-      {selected && (
-        <div
-          style={styles.modalOverlay}
-          onClick={() => setSelected(null)}
-        >
-          <div
-            style={styles.modalBox}
-            onClick={(e) => e.stopPropagation()}
-          >
-
-            {!detail ? (
-              <p style={{ color: "white" }}>
-                Loading...
-              </p>
-            ) : (
-              <>
-                <img
-                  src={detail.thumbnail}
-                  style={styles.modalImg}
-                />
-
-                <h2>{detail.title}</h2>
-
-                <p style={styles.desc}>
-                  {detail.description}
-                </p>
-
-                <p>
-                  Total Episode: {detail.total_episode}
-                </p>
-
-                <div style={styles.btnGroup}>
-                  <Link href={`/detail/${detail.final_slug || selected.slug}`}>
-                    <button style={styles.playBtn}>
-                      ▶ Tonton
-                    </button>
-                  </Link>
-
-                  <button
-                    onClick={() => setSelected(null)}
-                    style={styles.closeBtn}
-                  >
-                    Tutup
-                  </button>
-                </div>
-              </>
-            )}
-
-          </div>
+  // =========================
+  // RENDER
+  // =========================
+  if (loading) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.center}>
+          <div style={styles.spinner}></div>
+          <p style={{ color: "#aaa", marginTop: 15 }}>Memuat drama...</p>
         </div>
-      )}
-    </>
-  );
-}
+      </div>
+    );
+  }
 
-export default function SearchFullPage() {
+  if (error) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.center}>
+          <p style={{ color: "red" }}>{error}</p>
+          <button onClick={() => router.back()} style={styles.backBtn}>
+            ← Kembali
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.page}>
-      <div style={{ width: "100%", maxWidth: 1200 }}>
+      <div style={styles.container}>
 
-        {/* HEADER */}
-        <div style={styles.header}>
-          <Link href="/" style={styles.backBtn}>
-            ← Kembali
-          </Link>
+        {/* BACK */}
+        <button onClick={() => router.back()} style={styles.backBtn}>
+          ← Kembali
+        </button>
+
+        {/* VIDEO PLAYER */}
+        <div style={styles.playerWrap}>
+          {videoLoading ? (
+            <div style={styles.playerPlaceholder}>
+              <div style={styles.spinner}></div>
+              <p style={{ color: "#aaa", marginTop: 10, fontSize: 13 }}>
+                Memuat video episode {currentEp}...
+              </p>
+            </div>
+          ) : videoUrl ? (
+            <VideoPlayer videoUrl={videoUrl} />
+          ) : (
+            <div style={styles.playerPlaceholder}>
+              <p style={{ color: "#aaa" }}>Pilih episode untuk ditonton</p>
+            </div>
+          )}
         </div>
 
-        <Suspense
-          fallback={
-            <div style={{ color: "white" }}>
-              Memuat halaman...
+        {/* INFO */}
+        <div style={styles.infoRow}>
+          {detail?.thumbnail && (
+            <img src={detail.thumbnail} alt={detail.title} style={styles.thumb} />
+          )}
+          <div style={styles.infoText}>
+            <h1 style={styles.title}>{detail?.title}</h1>
+            <p style={styles.epInfo}>
+              Episode {currentEp} / {totalEpisodes || "?"}
+            </p>
+            {detail?.tags?.length > 0 && (
+              <div style={styles.tags}>
+                {detail.tags.map((tag, i) => (
+                  <span key={i} style={styles.tag}>{tag}</span>
+                ))}
+              </div>
+            )}
+            <p style={styles.desc}>{detail?.description}</p>
+          </div>
+        </div>
+
+        {/* EPISODE LIST */}
+        {totalEpisodes > 0 && (
+          <div style={styles.epSection}>
+            <h3 style={styles.epTitle}>Daftar Episode</h3>
+            <div style={styles.epGrid}>
+              {Array.from({ length: totalEpisodes }, (_, i) => i + 1).map((ep) => (
+                <button
+                  key={ep}
+                  onClick={() => handleEpClick(ep)}
+                  style={{
+                    ...styles.epBtn,
+                    background: ep === currentEp ? "red" : "#222",
+                    color: ep === currentEp ? "white" : "#ccc",
+                  }}
+                >
+                  {ep}
+                </button>
+              ))}
             </div>
-          }
-        >
-          <SearchContent />
-        </Suspense>
+          </div>
+        )}
+
       </div>
 
-      {/* HOVER EFFECT */}
       <style>{`
-        .card-item:hover {
-          transform: scale(1.08);
-          z-index: 2;
-          box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-        }
-
-        .card-item:hover .overlay {
-          opacity: 1;
-        }
-
-        .card-item:hover .info {
-          opacity: 1;
-        }
-
-        .card-item:hover img {
-          filter: brightness(1.2);
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
       `}</style>
     </div>
   );
 }
 
-/* ================= STYLE ================= */
-
+// =========================
+// STYLES
+// =========================
 const styles = {
   page: {
     background: "#000",
     minHeight: "100vh",
-    display: "flex",
-    justifyContent: "center",
+    color: "white",
     padding: 10,
-    color: "white",
   },
-
-  header: {
-    marginBottom: 20,
-    paddingTop: 10,
+  container: {
+    maxWidth: 800,
+    margin: "0 auto",
   },
-
-  backBtn: {
-    color: "red",
-    textDecoration: "none",
-    fontWeight: "bold",
-    fontSize: 15,
-  },
-
-  heading: {
-    fontSize: 20,
-    marginBottom: 20,
-    paddingLeft: 5,
-  },
-
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
-    gap: 10,
-  },
-
-  card: {
-    cursor: "pointer",
-    position: "relative",
-    transition: "transform 0.3s ease, box-shadow 0.3s ease",
-  },
-
-  img: {
-    width: "100%",
-    borderRadius: 10,
-    aspectRatio: "2/3",
-    objectFit: "cover",
-    transition: "filter 0.3s",
-  },
-
-  title: {
-    fontSize: 12,
-    color: "white",
-    textAlign: "center",
-    marginTop: 5,
-    overflow: "hidden",
-    display: "-webkit-box",
-    WebkitLineClamp: 2,
-    WebkitBoxOrient: "vertical",
-    minHeight: 32,
-  },
-
-  overlay: {
-    position: "absolute",
-    inset: 0,
-    borderRadius: 10,
-    background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent)",
-    opacity: 0,
-    transition: "opacity 0.3s",
-  },
-
-  info: {
-    position: "absolute",
-    bottom: 25,
-    left: 8,
-    right: 8,
-    fontSize: 10,
-    color: "#ccc",
-    opacity: 0,
-    transition: "opacity 0.3s",
-    zIndex: 2,
-  },
-
-  empty: {
-    textAlign: "center",
-    color: "#888",
-    marginTop: 50,
-  },
-
-  // MODAL
-  modalOverlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.8)",
+  center: {
     display: "flex",
+    flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 9999,
+    minHeight: "80vh",
   },
-
-  modalBox: {
-    background: "#111",
-    padding: 20,
-    borderRadius: 10,
-    maxWidth: 400,
-    width: "90%",
-    color: "white",
-    maxHeight: "80vh",
-    overflowY: "auto",
+  spinner: {
+    width: 40,
+    height: 40,
+    border: "4px solid #333",
+    borderTop: "4px solid red",
+    borderRadius: "50%",
+    animation: "spin 0.8s linear infinite",
   },
-
-  modalImg: {
+  backBtn: {
+    background: "transparent",
+    border: "none",
+    color: "red",
+    cursor: "pointer",
+    fontWeight: "bold",
+    fontSize: 15,
+    marginBottom: 15,
+    padding: 0,
+  },
+  playerWrap: {
     width: "100%",
+    background: "#111",
     borderRadius: 10,
+    overflow: "hidden",
+    marginBottom: 20,
   },
-
+  playerPlaceholder: {
+    width: "100%",
+    height: 220,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "#111",
+  },
+  infoRow: {
+    display: "flex",
+    gap: 15,
+    marginBottom: 25,
+  },
+  thumb: {
+    width: 100,
+    borderRadius: 8,
+    objectFit: "cover",
+    flexShrink: 0,
+    alignSelf: "flex-start",
+  },
+  infoText: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: "bold",
+    margin: "0 0 6px",
+  },
+  epInfo: {
+    fontSize: 13,
+    color: "#aaa",
+    margin: "0 0 8px",
+  },
+  tags: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 5,
+    marginBottom: 10,
+  },
+  tag: {
+    background: "#222",
+    color: "#ccc",
+    padding: "3px 8px",
+    borderRadius: 4,
+    fontSize: 11,
+  },
   desc: {
     fontSize: 13,
+    color: "#bbb",
+    lineHeight: 1.6,
+  },
+  epSection: {
     marginTop: 10,
   },
-
-  btnGroup: {
-    marginTop: 15,
-    display: "flex",
-    gap: 10,
+  epTitle: {
+    fontSize: 15,
+    marginBottom: 10,
+    color: "#eee",
   },
-
-  playBtn: {
-    flex: 1,
-    background: "red",
-    color: "white",
+  epGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(48px, 1fr))",
+    gap: 8,
+  },
+  epBtn: {
+    padding: "8px 4px",
     border: "none",
-    padding: 10,
     borderRadius: 6,
     cursor: "pointer",
-  },
-
-  closeBtn: {
-    flex: 1,
-    background: "#333",
-    color: "white",
-    border: "none",
-    padding: 10,
-    borderRadius: 6,
-    cursor: "pointer",
-  },
-
-  // SKELETON
-  skeletonCard: {
-    borderRadius: 10,
-  },
-
-  skeletonImage: {
-    width: "100%",
-    aspectRatio: "2/3",
-    borderRadius: 10,
-    background:
-      "linear-gradient(90deg, #222 25%, #333 50%, #222 75%)",
-    backgroundSize: "200% 100%",
-    animation: "shimmer 1.5s infinite",
-  },
-
-  skeletonTitle: {
-    height: 10,
-    marginTop: 6,
-    borderRadius: 4,
-    background: "#222",
+    fontSize: 13,
+    fontWeight: "bold",
+    transition: "background 0.2s",
   },
 };
