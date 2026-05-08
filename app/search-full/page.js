@@ -48,21 +48,26 @@ function SearchContent() {
 
   // ================= OPEN DETAIL =================
   const openDetail = async (item) => {
-    setSelected(item);
-    setDetail(null);
+  setSelected(item);
+  setDetail(null);
 
-    try {
-      const res = await fetch(
-        `https://drama-liart.vercel.app/detail?slug=${item.slug}`
-      );
+  try {
+    const res = await fetch(
+      `https://drama-liart.vercel.app/detail?slug=${encodeURIComponent(item.slug)}`
+    );
 
-      const data = await res.json();
+    const data = await res.json();
 
-      setDetail(data.data);
-    } catch (err) {
-      console.error("Detail error:", err);
-    }
-  };
+    // 🔥 FIX: simpan final_slug ke dalam detail
+    setDetail({
+      ...data.data,
+      final_slug: data.final_slug  // ← ambil dari root response
+    });
+
+  } catch (err) {
+    console.error("Detail error:", err);
+  }
+};
 
   // ================= LOCK SCROLL =================
   useEffect(() => {
@@ -183,7 +188,7 @@ function SearchContent() {
                 </p>
 
                 <div style={styles.btnGroup}>
-                  <Link href={`/detail/${selected.slug}`}>
+                  <Link href={`/detail/${detail.final_slug || selected.slug}`}>
                     <button style={styles.playBtn}>
                       ▶ Tonton
                     </button>
