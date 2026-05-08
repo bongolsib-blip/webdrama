@@ -11,6 +11,11 @@ function SearchContent() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // MODAL
+  const [selected, setSelected] = useState(null);
+  const [detail, setDetail] = useState(null);
+
+  // ================= SEARCH =================
   useEffect(() => {
     if (!query) {
       setLoading(false);
@@ -41,6 +46,52 @@ function SearchContent() {
     fetchResults();
   }, [query]);
 
+  // ================= OPEN DETAIL =================
+  const openDetail = async (item) => {
+    setSelected(item);
+    setDetail(null);
+
+    try {
+      const res = await fetch(
+        `https://drama-liart.vercel.app/detail?slug=${item.slug}`
+      );
+
+      const data = await res.json();
+
+      setDetail(data.data);
+    } catch (err) {
+      console.error("Detail error:", err);
+    }
+  };
+
+  // ================= LOCK SCROLL =================
+  useEffect(() => {
+    if (selected) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "auto";
+    }
+
+    return () => {
+      document.body.style.overflow = "auto";
+    };
+  }, [selected]);
+
+  // ================= ESC CLOSE =================
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.key === "Escape") {
+        setSelected(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKey);
+
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, []);
+
   return (
     <>
       {/* TITLE */}
@@ -65,30 +116,29 @@ function SearchContent() {
         {/* DATA */}
         {!loading &&
           results.map((item) => (
-            <Link
+            <div
               key={item.slug}
-              href={`/detail/${item.slug}`}
-              style={{ textDecoration: "none" }}
+              className="card-item"
+              style={styles.card}
+              onClick={() => openDetail(item)}
             >
-              <div className="card-item" style={styles.card}>
-                <img
-                  src={item.thumbnail}
-                  alt={item.title}
-                  loading="lazy"
-                  style={styles.img}
-                />
+              <img
+                src={item.thumbnail}
+                alt={item.title}
+                loading="lazy"
+                style={styles.img}
+              />
 
-                <div className="overlay" style={styles.overlay}></div>
+              <div className="overlay" style={styles.overlay}></div>
 
-                <div className="info" style={styles.info}>
-                  {item.tags?.join(", ")}
-                </div>
-
-                <div style={styles.title}>
-                  {item.title}
-                </div>
+              <div className="info" style={styles.info}>
+                {item.tags?.join(", ")}
               </div>
-            </Link>
+
+              <div style={styles.title}>
+                {item.title}
+              </div>
+            </div>
           ))}
 
       </div>
@@ -98,6 +148,59 @@ function SearchContent() {
         <p style={styles.empty}>
           Drama tidak ditemukan.
         </p>
+      )}
+
+      {/* MODAL */}
+      {selected && (
+        <div
+          style={styles.modalOverlay}
+          onClick={() => setSelected(null)}
+        >
+          <div
+            style={styles.modalBox}
+            onClick={(e) => e.stopPropagation()}
+          >
+
+            {!detail ? (
+              <p style={{ color: "white" }}>
+                Loading...
+              </p>
+            ) : (
+              <>
+                <img
+                  src={detail.thumbnail}
+                  style={styles.modalImg}
+                />
+
+                <h2>{detail.title}</h2>
+
+                <p style={styles.desc}>
+                  {detail.description}
+                </p>
+
+                <p>
+                  Total Episode: {detail.total_episode}
+                </p>
+
+                <div style={styles.btnGroup}>
+                  <Link href={`/detail/${selected.slug}`}>
+                    <button style={styles.playBtn}>
+                      ▶ Tonton
+                    </button>
+                  </Link>
+
+                  <button
+                    onClick={() => setSelected(null)}
+                    style={styles.closeBtn}
+                  >
+                    Tutup
+                  </button>
+                </div>
+              </>
+            )}
+
+          </div>
+        </div>
       )}
     </>
   );
@@ -239,6 +342,65 @@ const styles = {
     marginTop: 50,
   },
 
+  // MODAL
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.8)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 9999,
+  },
+
+  modalBox: {
+    background: "#111",
+    padding: 20,
+    borderRadius: 10,
+    maxWidth: 400,
+    width: "90%",
+    color: "white",
+    maxHeight: "80vh",
+    overflowY: "auto",
+  },
+
+  modalImg: {
+    width: "100%",
+    borderRadius: 10,
+  },
+
+  desc: {
+    fontSize: 13,
+    marginTop: 10,
+  },
+
+  btnGroup: {
+    marginTop: 15,
+    display: "flex",
+    gap: 10,
+  },
+
+  playBtn: {
+    flex: 1,
+    background: "red",
+    color: "white",
+    border: "none",
+    padding: 10,
+    borderRadius: 6,
+    cursor: "pointer",
+  },
+
+  closeBtn: {
+    flex: 1,
+    background: "#333",
+    color: "white",
+    border: "none",
+    padding: 10,
+    borderRadius: 6,
+    cursor: "pointer",
+  },
+
+  // SKELETON
   skeletonCard: {
     borderRadius: 10,
   },
