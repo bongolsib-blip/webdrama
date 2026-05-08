@@ -1,11 +1,13 @@
 "use client";
+
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react"; // Tambahkan Suspense
 import Link from "next/link";
 
-export default function SearchFullPage() {
+// 1. Pindahkan logika pencarian ke komponen terpisah
+function SearchContent() {
   const searchParams = useSearchParams();
-  const query = searchParams.get("q"); // Mengambil kata kunci dari URL
+  const query = searchParams.get("q");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -15,7 +17,6 @@ export default function SearchFullPage() {
     const fetchResults = async () => {
       setLoading(true);
       try {
-        // Ganti URL ini dengan URL API domain berbeda Anda
         const res = await fetch(`https://drama-liart.vercel.app/search?q=${query}`);
         const data = await res.json();
         setResults(data.items || []);
@@ -30,7 +31,7 @@ export default function SearchFullPage() {
   }, [query]);
 
   return (
-    <div style={{ padding: "20px", background: "#000", minHeight: "100vh", color: "white" }}>
+    <div>
       <h1>Hasil Pencarian untuk: "{query}"</h1>
       
       {loading ? (
@@ -50,7 +51,18 @@ export default function SearchFullPage() {
       )}
 
       {results.length === 0 && !loading && <p>Tidak ada hasil ditemukan.</p>}
-      
+    </div>
+  );
+}
+
+// 2. Export utama yang membungkus komponen tadi dengan Suspense
+export default function SearchFullPage() {
+  return (
+    <div style={{ padding: "20px", background: "#000", minHeight: "100vh", color: "white" }}>
+      <Suspense fallback={<p>Loading Search...</p>}>
+        <SearchContent />
+      </Suspense>
+
       <div style={{ marginTop: "30px" }}>
         <Link href="/" style={{ color: "red" }}>← Kembali ke Beranda</Link>
       </div>
