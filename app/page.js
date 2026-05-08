@@ -79,6 +79,11 @@ export default function Home() {
           detectCategories(item).includes(genre)
         );
 
+  const handleFullSearch = () => {
+    if (!query.trim()) return;
+    router.push(`/search-full?q=${encodeURIComponent(query)}`);
+  };
+  
   // ================= LOAD DATA =================
   const loadData = async (p = 1) => {
     if (loading) return;
@@ -126,7 +131,6 @@ export default function Home() {
         const res = await fetch(
           `https://drama-liart.vercel.app/search?q=${query}`
         );
-
         const data = await res.json();
         setSuggestions(data.items || []);
       } catch (err) {
@@ -204,14 +208,53 @@ export default function Home() {
     <div style={styles.page}>
       <div style={{ width: "100%", maxWidth: 1200 }}>
 
-        {/* SEARCH */}
-        <div style={styles.searchBox}>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Cari drama..."
-            style={styles.input}
-          />
+        {/* SEARCH SECTION DENGAN TOMBOL FULL SEARCH */}
+        <div style={styles.searchContainer}>
+          <div style={styles.searchBox}>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleFullSearch(); // Tekan Enter untuk Full Search
+              }}
+              placeholder="Cari drama..."
+              style={styles.input}
+            />
+            {query && (
+              <button 
+                onClick={handleFullSearch}
+                style={styles.fullSearchBtn}
+              >
+                Cari Lengkap
+              </button>
+            )}
+          </div>
+
+          {/* SUGGESTION BOX */}
+          {query && suggestions.length > 0 && (
+            <div style={styles.suggestionBox}>
+              {suggestions.slice(0, 5).map((item) => (
+                <div
+                  key={item.slug}
+                  style={styles.suggestionItem}
+                  onClick={() => {
+                    openDetail(item);
+                    setQuery("");
+                    setSuggestions([]);
+                  }}
+                >
+                  <span>🔍 {item.title}</span>
+                </div>
+              ))}
+              {/* Tombol di dalam suggestion untuk lihat semua */}
+              <div 
+                style={{...styles.suggestionItem, color: 'red', fontWeight: 'bold'}}
+                onClick={handleFullSearch}
+              >
+                Lihat Semua Hasil untuk "{query}" →
+              </div>
+            </div>
+          )}
         </div>
 
         {/* GENRE */}
@@ -359,6 +402,55 @@ const styles = {
     display: "flex",
     justifyContent: "center",
     padding: 10,
+  },
+
+  searchContainer: {
+    position: "sticky",
+    top: 0,
+    zIndex: 100,
+    background: "#000",
+    padding: "10px 0",
+    width: "100%",
+  },
+  searchBox: {
+    display: "flex",
+    gap: 10,
+    padding: "0 10px",
+    maxWidth: 600,
+    margin: "0 auto",
+  },
+  fullSearchBtn: {
+    background: "red",
+    color: "white",
+    border: "none",
+    borderRadius: 10,
+    padding: "0 15px",
+    cursor: "pointer",
+    fontWeight: "bold",
+    whiteSpace: "nowrap",
+  },
+  suggestionBox: {
+    position: "absolute",
+    left: 10,
+    right: 10,
+    maxWidth: 580,
+    margin: "5px auto 0",
+    background: "#111",
+    borderRadius: 10,
+    border: "1px solid #333",
+    boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+    overflow: "hidden",
+  },
+  suggestionItem: {
+    padding: "12px 15px",
+    color: "white",
+    borderBottom: "1px solid #222",
+    cursor: "pointer",
+    fontSize: 14,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    transition: "background 0.2s",
   },
 
   searchBox: {
