@@ -103,34 +103,57 @@ export default function DetailPage() {
   // =========================
   useEffect(() => {
     if (!rawSlug) return;
-
+  
     const fetchDetail = async () => {
       setLoading(true);
       setError(null);
-
+  
       try {
-        const res = await fetch(
-          `${API}/detail?slug=${encodeURIComponent(rawSlug)}`
-        );
+        let slugToUse = rawSlug;
+  
+        // ==============================
+        // STEP 1: Resolve jika import slug
+        // ==============================
+        if (rawSlug.startsWith("import")) {
+          setLoadingText("Mengimpor drama, harap tunggu...");
+  
+          const resolveRes = await fetch(
+            `${API}/resolve-import?slug=${encodeURIComponent(rawSlug)}`
+          );
+          const resolveData = await resolveRes.json();
+  
+          if (!resolveData.final_slug) {
+            setError("Gagal mengimpor drama. Coba lagi.");
+            return;
+          }
+  
+          slugToUse = resolveData.final_slug;
+        }
+  
+        // ==============================
+        // STEP 2: Fetch detail pakai slug bersih
+        // ==============================
+        setLoadingText("Memuat detail drama...");
+  
+        const res = await fetch(`${API}/detail?slug=${slugToUse}`);
         const data = await res.json();
-
+  
         if (data.data?.error) {
           setError(data.data.error);
           return;
         }
-
-        // 🔥 Simpan final_slug — ini yang dipakai untuk fetch video
-        setFinalSlug(data.final_slug);
+  
+        setFinalSlug(data.final_slug || slugToUse);
         setDetail(data.data);
         setTotalEpisodes(data.data.total_episode || 0);
-
+  
       } catch (err) {
-        setError("Gagal memuat detail drama.");
+        setError("Gagal memuat. Periksa koneksi internet.");
       } finally {
         setLoading(false);
       }
     };
-
+  
     fetchDetail();
   }, [rawSlug]);
 
@@ -175,12 +198,20 @@ export default function DetailPage() {
   // =========================
   // RENDER
   // =========================
+  const [loadingText, setLoadingText] = useState("Memuat drama...");
+
+  // Di bagian render loading:
   if (loading) {
     return (
       <div style={styles.page}>
         <div style={styles.center}>
           <div style={styles.spinner}></div>
-          <p style={{ color: "#aaa", marginTop: 15 }}>Memuat drama...</p>
+          <p style={{ color: "#aaa", marginTop: 15 }}>{loadingText}</p>
+          {loadingText.includes("Mengimpor") && (
+            <p style={{ color: "#666", fontSize: 12, marginTop: 5 }}>
+              Proses ini bisa memakan waktu 10-30 detik
+            </p>
+          )}
         </div>
       </div>
     );
