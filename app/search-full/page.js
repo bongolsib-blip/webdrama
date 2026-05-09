@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
 
 const API = "https://drama-liart.vercel.app";
 
@@ -18,37 +17,31 @@ function VideoPlayer({ videoUrl }) {
 
     const video = videoRef.current;
 
-    // Bersihkan HLS instance sebelumnya
     if (hlsRef.current) {
       hlsRef.current.destroy();
       hlsRef.current = null;
     }
 
-    // Wrap lewat proxy backend agar tidak CORS error
     const proxiedUrl = `${API}/stream?url=${encodeURIComponent(videoUrl)}`;
 
     const loadHls = async () => {
       const Hls = (await import("hls.js")).default;
 
       if (Hls.isSupported()) {
-        const hls = new Hls({
-          enableWorker: false,
-        });
+        const hls = new Hls({ enableWorker: false });
         hlsRef.current = hls;
         hls.loadSource(proxiedUrl);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           video.play().catch(() => {});
         });
-        hls.on(Hls.Events.ERROR, (event, data) => {
+        hls.on(Hls.Events.ERROR, (_, data) => {
           console.error("HLS error:", data);
         });
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        // Safari: native HLS support
         video.src = proxiedUrl;
         video.play().catch(() => {});
       } else {
-        // Fallback MP4
         video.src = proxiedUrl;
         video.play().catch(() => {});
       }
@@ -68,12 +61,7 @@ function VideoPlayer({ videoUrl }) {
     <video
       ref={videoRef}
       controls
-      style={{
-        width: "100%",
-        borderRadius: 10,
-        background: "#000",
-        maxHeight: "60vh",
-      }}
+      style={{ width: "100%", borderRadius: 10, background: "#000", maxHeight: "60vh" }}
     />
   );
 }
@@ -85,17 +73,19 @@ export default function DetailPage() {
   const params = useParams();
   const router = useRouter();
 
-  // slug dari URL — bisa saja masih "import?..."
   const rawSlug = decodeURIComponent(params.slug || "");
 
-  const [detail, setDetail] = useState(null);
-  const [finalSlug, setFinalSlug] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const [currentEp, setCurrentEp] = useState(1);
-  const [videoUrl, setVideoUrl] = useState(null);
-  const [videoLoading, setVideoLoading] = useState(false);
+  // =========================
+  // 🔥 SEMUA STATE DI SINI — sebelum if/return apapun
+  // =========================
+  const [detail, setDetail]               = useState(null);
+  const [finalSlug, setFinalSlug]         = useState(null);
+  const [loading, setLoading]             = useState(true);
+  const [loadingText, setLoadingText]     = useState("Memuat drama..."); // 🔥 dipindah ke sini
+  const [error, setError]                 = useState(null);
+  const [currentEp, setCurrentEp]         = useState(1);
+  const [videoUrl, setVideoUrl]           = useState(null);
+  const [videoLoading, setVideoLoading]   = useState(false);
   const [totalEpisodes, setTotalEpisodes] = useState(0);
 
   // =========================
@@ -103,57 +93,64 @@ export default function DetailPage() {
   // =========================
   useEffect(() => {
     if (!rawSlug) return;
-  
+
     const fetchDetail = async () => {
       setLoading(true);
       setError(null);
-  
+
       try {
         let slugToUse = rawSlug;
-  
-        // ==============================
+
         // STEP 1: Resolve jika import slug
-        // ==============================
         if (rawSlug.startsWith("import")) {
           setLoadingText("Mengimpor drama, harap tunggu...");
-  
+
           const resolveRes = await fetch(
             `${API}/resolve-import?slug=${encodeURIComponent(rawSlug)}`
           );
           const resolveData = await resolveRes.json();
-  
+
           if (!resolveData.final_slug) {
-            setError("Gagal mengimpor drama. Coba lagi.");
-            return;
+            // Retry sekali lagi
+            await new Promise((r) => setTimeout(r, 3000));
+            const retryRes = await fetch(
+              `${API}/resolve-import?slug=${encodeURIComponent(rawSlug)}`
+            );
+            const retryData = await retryRes.json();
+
+            if (!retryData.final_slug) {
+              setError("Gagal mengimpor drama. Coba refresh halaman.");
+              return;
+            }
+            slugToUse = retryData.final_slug;
+          } else {
+            slugToUse = resolveData.final_slug;
           }
-  
-          slugToUse = resolveData.final_slug;
         }
-  
-        // ==============================
+
         // STEP 2: Fetch detail pakai slug bersih
-        // ==============================
         setLoadingText("Memuat detail drama...");
-  
+
         const res = await fetch(`${API}/detail?slug=${slugToUse}`);
         const data = await res.json();
-  
+
         if (data.data?.error) {
           setError(data.data.error);
           return;
         }
-  
+
         setFinalSlug(data.final_slug || slugToUse);
         setDetail(data.data);
         setTotalEpisodes(data.data.total_episode || 0);
-  
+
       } catch (err) {
+        console.error("fetchDetail error:", err);
         setError("Gagal memuat. Periksa koneksi internet.");
       } finally {
         setLoading(false);
       }
     };
-  
+
     fetchDetail();
   }, [rawSlug]);
 
@@ -196,11 +193,8 @@ export default function DetailPage() {
   };
 
   // =========================
-  // RENDER
+  // RENDER — conditional return SETELAH semua hooks
   // =========================
-  const [loadingText, setLoadingText] = useState("Memuat drama...");
-
-  // Di bagian render loading:
   if (loading) {
     return (
       <div style={styles.page}>
@@ -209,10 +203,11 @@ export default function DetailPage() {
           <p style={{ color: "#aaa", marginTop: 15 }}>{loadingText}</p>
           {loadingText.includes("Mengimpor") && (
             <p style={{ color: "#666", fontSize: 12, marginTop: 5 }}>
-              Proses ini bisa memakan waktu 10-30 detik
+              Proses ini bisa memakan waktu 10–30 detik
             </p>
           )}
         </div>
+        <style>{spinStyle}</style>
       </div>
     );
   }
@@ -221,7 +216,7 @@ export default function DetailPage() {
     return (
       <div style={styles.page}>
         <div style={styles.center}>
-          <p style={{ color: "red" }}>{error}</p>
+          <p style={{ color: "red", marginBottom: 15 }}>{error}</p>
           <button onClick={() => router.back()} style={styles.backBtn}>
             ← Kembali
           </button>
@@ -302,12 +297,7 @@ export default function DetailPage() {
 
       </div>
 
-      <style>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
+      <style>{spinStyle}</style>
     </div>
   );
 }
@@ -315,6 +305,13 @@ export default function DetailPage() {
 // =========================
 // STYLES
 // =========================
+const spinStyle = `
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+`;
+
 const styles = {
   page: {
     background: "#000",
@@ -379,9 +376,7 @@ const styles = {
     flexShrink: 0,
     alignSelf: "flex-start",
   },
-  infoText: {
-    flex: 1,
-  },
+  infoText: { flex: 1 },
   title: {
     fontSize: 18,
     fontWeight: "bold",
@@ -410,9 +405,7 @@ const styles = {
     color: "#bbb",
     lineHeight: 1.6,
   },
-  epSection: {
-    marginTop: 10,
-  },
+  epSection: { marginTop: 10 },
   epTitle: {
     fontSize: 15,
     marginBottom: 10,
