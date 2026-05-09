@@ -4,6 +4,8 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 
+const API = "https://drama-liart.vercel.app";
+
 function SearchContent() {
   const searchParams = useSearchParams();
   const query = searchParams.get("q") || "";
@@ -14,6 +16,7 @@ function SearchContent() {
   // MODAL
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [finalSlug, setFinalSlug] = useState(null); // 🔥 tambah ini
 
   // ================= SEARCH =================
   useEffect(() => {
@@ -24,17 +27,24 @@ function SearchContent() {
 
     const fetchResults = async () => {
       setLoading(true);
+      let allItems = [];
+      let currentPage = 1;
 
       try {
-        const res = await fetch(
-          `https://drama-liart.vercel.app/search-full?q=${encodeURIComponent(
-            query
-          )}`
-        );
+        while (true) {
+          const res = await fetch(
+            `${API}/search-full?q=${encodeURIComponent(query)}&page=${currentPage}`
+          );
+          const data = await res.json();
 
-        const data = await res.json();
+          allItems = [...allItems, ...(data.items || [])];
 
-        setResults(data.items || []);
+          if (!data.has_next || data.items?.length === 0) break;
+          currentPage++;
+          if (currentPage > 10) break;
+        }
+
+        setResults(allItems);
       } catch (err) {
         console.error("Fetch error:", err);
         setResults([]);
@@ -43,21 +53,23 @@ function SearchContent() {
       }
     };
 
-    fetchResults();
+    fetchResults(); // 🔥 Bug 1 fix: fetchResults dipanggil di dalam useEffect
   }, [query]);
 
   // ================= OPEN DETAIL =================
   const openDetail = async (item) => {
     setSelected(item);
     setDetail(null);
+    setFinalSlug(null); // reset
 
     try {
       const res = await fetch(
-        `https://drama-liart.vercel.app/detail?slug=${item.slug}`
+        `${API}/detail?slug=${encodeURIComponent(item.slug)}`
       );
-
       const data = await res.json();
 
+      // 🔥 Bug 2 fix: simpan final_slug dari response
+      setFinalSlug(data.final_slug || item.slug);
       setDetail(data.data);
     } catch (err) {
       console.error("Detail error:", err);
@@ -66,30 +78,17 @@ function SearchContent() {
 
   // ================= LOCK SCROLL =================
   useEffect(() => {
-    if (selected) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "auto";
-    }
-
-    return () => {
-      document.body.style.overflow = "auto";
-    };
+    document.body.style.overflow = selected ? "hidden" : "auto";
+    return () => { document.body.style.overflow = "auto"; };
   }, [selected]);
 
   // ================= ESC CLOSE =================
   useEffect(() => {
     const handleKey = (e) => {
-      if (e.key === "Escape") {
-        setSelected(null);
-      }
+      if (e.key === "Escape") setSelected(null);
     };
-
     window.addEventListener("keydown", handleKey);
-
-    return () => {
-      window.removeEventListener("keydown", handleKey);
-    };
+    return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
   return (
@@ -115,9 +114,9 @@ function SearchContent() {
 
         {/* DATA */}
         {!loading &&
-          results.map((item) => (
+          results.map((item, index) => (
             <div
-              key={item.slug}
+              key={`${item.slug}-${index}`} // 🔥 pakai index juga agar tidak collision jika slug duplikat
               className="card-item"
               style={styles.card}
               onClick={() => openDetail(item)}
@@ -128,71 +127,41 @@ function SearchContent() {
                 loading="lazy"
                 style={styles.img}
               />
-
               <div className="overlay" style={styles.overlay}></div>
-
               <div className="info" style={styles.info}>
                 {item.tags?.join(", ")}
               </div>
-
-              <div style={styles.title}>
-                {item.title}
-              </div>
+              <div style={styles.title}>{item.title}</div>
             </div>
           ))}
-
       </div>
 
       {/* EMPTY */}
       {!loading && results.length === 0 && (
-        <p style={styles.empty}>
-          Drama tidak ditemukan.
-        </p>
+        <p style={styles.empty}>Drama tidak ditemukan.</p>
       )}
 
       {/* MODAL */}
       {selected && (
-        <div
-          style={styles.modalOverlay}
-          onClick={() => setSelected(null)}
-        >
-          <div
-            style={styles.modalBox}
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div style={styles.modalOverlay} onClick={() => setSelected(null)}>
+          <div style={styles.modalBox} onClick={(e) => e.stopPropagation()}>
 
             {!detail ? (
-              <p style={{ color: "white" }}>
-                Loading...
-              </p>
+              <p style={{ color: "white" }}>Loading...</p>
             ) : (
               <>
-                <img
-                  src={detail.thumbnail}
-                  style={styles.modalImg}
-                />
-
+                <img src={detail.thumbnail} style={styles.modalImg} alt={detail.title} />
                 <h2>{detail.title}</h2>
-
-                <p style={styles.desc}>
-                  {detail.description}
-                </p>
-
-                <p>
-                  Total Episode: {detail.total_episode}
-                </p>
+                <p style={styles.desc}>{detail.description}</p>
+                <p>Total Episode: {detail.total_episode}</p>
 
                 <div style={styles.btnGroup}>
-                  <Link href={`/detail/${selected.slug}`}>
-                    <button style={styles.playBtn}>
-                      ▶ Tonton
-                    </button>
+                  {/* 🔥 Bug 3 fix: pakai finalSlug bukan selected.slug */}
+                  <Link href={`/detail/${encodeURIComponent(finalSlug || selected.slug)}`}>
+                    <button style={styles.playBtn}>▶ Tonton</button>
                   </Link>
 
-                  <button
-                    onClick={() => setSelected(null)}
-                    style={styles.closeBtn}
-                  >
+                  <button onClick={() => setSelected(null)} style={styles.closeBtn}>
                     Tutup
                   </button>
                 </div>
@@ -211,49 +180,32 @@ export default function SearchFullPage() {
     <div style={styles.page}>
       <div style={{ width: "100%", maxWidth: 1200 }}>
 
-        {/* HEADER */}
         <div style={styles.header}>
-          <Link href="/" style={styles.backBtn}>
-            ← Kembali
-          </Link>
+          <Link href="/" style={styles.backBtn}>← Kembali</Link>
         </div>
 
-        <Suspense
-          fallback={
-            <div style={{ color: "white" }}>
-              Memuat halaman...
-            </div>
-          }
-        >
+        <Suspense fallback={<div style={{ color: "white" }}>Memuat halaman...</div>}>
           <SearchContent />
         </Suspense>
       </div>
 
-      {/* HOVER EFFECT */}
       <style>{`
         .card-item:hover {
           transform: scale(1.08);
           z-index: 2;
           box-shadow: 0 10px 30px rgba(0,0,0,0.6);
         }
-
-        .card-item:hover .overlay {
-          opacity: 1;
-        }
-
-        .card-item:hover .info {
-          opacity: 1;
-        }
-
-        .card-item:hover img {
-          filter: brightness(1.2);
+        .card-item:hover .overlay { opacity: 1; }
+        .card-item:hover .info { opacity: 1; }
+        .card-item:hover img { filter: brightness(1.2); }
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
         }
       `}</style>
     </div>
   );
 }
-
-/* ================= STYLE ================= */
 
 const styles = {
   page: {
@@ -264,37 +216,19 @@ const styles = {
     padding: 10,
     color: "white",
   },
-
-  header: {
-    marginBottom: 20,
-    paddingTop: 10,
-  },
-
-  backBtn: {
-    color: "red",
-    textDecoration: "none",
-    fontWeight: "bold",
-    fontSize: 15,
-  },
-
-  heading: {
-    fontSize: 20,
-    marginBottom: 20,
-    paddingLeft: 5,
-  },
-
+  header: { marginBottom: 20, paddingTop: 10 },
+  backBtn: { color: "red", textDecoration: "none", fontWeight: "bold", fontSize: 15 },
+  heading: { fontSize: 20, marginBottom: 20, paddingLeft: 5 },
   grid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
     gap: 10,
   },
-
   card: {
     cursor: "pointer",
     position: "relative",
     transition: "transform 0.3s ease, box-shadow 0.3s ease",
   },
-
   img: {
     width: "100%",
     borderRadius: 10,
@@ -302,7 +236,6 @@ const styles = {
     objectFit: "cover",
     transition: "filter 0.3s",
   },
-
   title: {
     fontSize: 12,
     color: "white",
@@ -314,7 +247,6 @@ const styles = {
     WebkitBoxOrient: "vertical",
     minHeight: 32,
   },
-
   overlay: {
     position: "absolute",
     inset: 0,
@@ -323,7 +255,6 @@ const styles = {
     opacity: 0,
     transition: "opacity 0.3s",
   },
-
   info: {
     position: "absolute",
     bottom: 25,
@@ -335,14 +266,7 @@ const styles = {
     transition: "opacity 0.3s",
     zIndex: 2,
   },
-
-  empty: {
-    textAlign: "center",
-    color: "#888",
-    marginTop: 50,
-  },
-
-  // MODAL
+  empty: { textAlign: "center", color: "#888", marginTop: 50 },
   modalOverlay: {
     position: "fixed",
     inset: 0,
@@ -352,7 +276,6 @@ const styles = {
     justifyContent: "center",
     zIndex: 9999,
   },
-
   modalBox: {
     background: "#111",
     padding: 20,
@@ -363,23 +286,9 @@ const styles = {
     maxHeight: "80vh",
     overflowY: "auto",
   },
-
-  modalImg: {
-    width: "100%",
-    borderRadius: 10,
-  },
-
-  desc: {
-    fontSize: 13,
-    marginTop: 10,
-  },
-
-  btnGroup: {
-    marginTop: 15,
-    display: "flex",
-    gap: 10,
-  },
-
+  modalImg: { width: "100%", borderRadius: 10 },
+  desc: { fontSize: 13, marginTop: 10 },
+  btnGroup: { marginTop: 15, display: "flex", gap: 10 },
   playBtn: {
     flex: 1,
     background: "red",
@@ -389,7 +298,6 @@ const styles = {
     borderRadius: 6,
     cursor: "pointer",
   },
-
   closeBtn: {
     flex: 1,
     background: "#333",
@@ -399,26 +307,14 @@ const styles = {
     borderRadius: 6,
     cursor: "pointer",
   },
-
-  // SKELETON
-  skeletonCard: {
-    borderRadius: 10,
-  },
-
+  skeletonCard: { borderRadius: 10 },
   skeletonImage: {
     width: "100%",
     aspectRatio: "2/3",
     borderRadius: 10,
-    background:
-      "linear-gradient(90deg, #222 25%, #333 50%, #222 75%)",
+    background: "linear-gradient(90deg, #222 25%, #333 50%, #222 75%)",
     backgroundSize: "200% 100%",
     animation: "shimmer 1.5s infinite",
   },
-
-  skeletonTitle: {
-    height: 10,
-    marginTop: 6,
-    borderRadius: 4,
-    background: "#222",
-  },
+  skeletonTitle: { height: 10, marginTop: 6, borderRadius: 4, background: "#222" },
 };
