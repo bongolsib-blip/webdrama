@@ -51,11 +51,17 @@ export default function PlayerPage() {
   
         if (slug.startsWith("import")) {
           // STEP 1: Trigger import, dapat task_id
+          console.log("START IMPORT");
+
           const startRes = await fetch(
-            console.log("sedang akses import");
             `https://drama-liart.vercel.app/start-import?slug=${encodeURIComponent(slug)}`
           );
+          
+          console.log("STATUS", startRes.status);
+          
           const startData = await startRes.json();
+          
+          console.log("START DATA", startData);
   
           if (startData.status === "success") {
             // Langsung dapat slug (drama sudah ada)
@@ -71,6 +77,8 @@ export default function PlayerPage() {
   
               await new Promise(r => setTimeout(r, 3000));
   
+              console.log("POLLING...", i + 1);
+
               const pollRes = await fetch(
                 `https://drama-liart.vercel.app/poll-import?task_id=${taskId}`,
                 {
@@ -83,6 +91,10 @@ export default function PlayerPage() {
                   })
                 }
               );
+              
+              const pollData = await pollRes.json();
+              
+              console.log("POLL RESULT", pollData);
               const pollData = await pollRes.json();
   
               console.log(`[poll ${i+1}]`, pollData);
