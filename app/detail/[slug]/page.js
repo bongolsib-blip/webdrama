@@ -52,6 +52,7 @@ export default function PlayerPage() {
         if (slug.startsWith("import")) {
           // STEP 1: Trigger import, dapat task_id
           const startRes = await fetch(
+            console.log("sedang akses import");
             `https://drama-liart.vercel.app/start-import?slug=${encodeURIComponent(slug)}`
           );
           const startData = await startRes.json();
