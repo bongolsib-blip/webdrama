@@ -178,6 +178,16 @@ function SearchContent() {
               resolved = true;
               break;
             }
+            if (pollData.status === "failed") {
+              console.error("IMPORT FAILED:", pollData.message);
+            
+              alert(
+                pollData.message ||
+                "Drama gagal diimport dari provider"
+              );
+            
+              return;
+            }
   
             if (pollData.status === "error") {
               console.error("Import error:", pollData.message);
