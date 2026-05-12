@@ -6,81 +6,119 @@ import Link from "next/link";
 
 const API = "https://drama-liart.vercel.app";
 
+const PROVIDERS = [
+  "shortmax", "dramabox", "dramabite", "dramawave", "dramanova",
+  "netshort", "reelshort", "idrama", "melolo", "starshort",
+  "goodshort", "flextv", "fundrama", "microdrama", "bilitv",
+  "vigloo", "velolo", "reelala", "stardusttv", "flickreels", "reelife"
+];
+
 function SearchContent() {
   const searchParams = useSearchParams();
   const query = searchParams.get("q") || "";
 
   const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [hasNext, setHasNext] = useState(false);
+  const [loadingLocal, setLoadingLocal] = useState(false);
+  const [loadingProviders, setLoadingProviders] = useState(false);
+  const [doneProviders, setDoneProviders] = useState(0);
+  const seenTitles = useRef(new Set());
+  const abortRef = useRef(null);
 
   // MODAL
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
   const [finalSlug, setFinalSlug] = useState(null);
 
-  // Sentinel untuk infinite scroll
-  const sentinelRef = useRef(null);
-
-  // ================= FETCH PAGE =================
-  const fetchPage = async (q, page, append = false) => {
-    if (page === 1) setLoading(true);
-    else setLoadingMore(true);
-
-    try {
-      const res = await fetch(
-        `${API}/search-full?q=${encodeURIComponent(q)}&page=${page}`
-      );
-      const data = await res.json();
-      const items = data.items || [];
-
-      setResults(prev => append ? [...prev, ...items] : items);
-      setHasNext(data.has_next && items.length > 0);
-      setCurrentPage(page);
-    } catch (err) {
-      console.error("Fetch error:", err);
-      if (!append) setResults([]);
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  };
-
-  // ================= SEARCH AWAL =================
+  // =========================
+  // FETCH BERTAHAP
+  // =========================
   useEffect(() => {
     if (!query) {
       setResults([]);
-      setLoading(false);
       return;
     }
+
+    // Abort fetch sebelumnya jika query berubah
+    if (abortRef.current) abortRef.current = false;
+    const isActive = { value: true };
+    abortRef.current = isActive;
+
+    seenTitles.current = new Set();
     setResults([]);
-    setCurrentPage(1);
-    setHasNext(false);
-    fetchPage(query, 1, false);
+    setDoneProviders(0);
+
+    const run = async () => {
+      // ==============================
+      // STEP 1: Fetch lokal (cepat)
+      // ==============================
+      setLoadingLocal(true);
+      try {
+        const res = await fetch(`${API}/search-local?q=${encodeURIComponent(query)}`);
+        const data = await res.json();
+
+        if (!isActive.value) return;
+
+        const localItems = (data.items || []).filter(item => {
+          const key = item.title.toLowerCase().trim();
+          if (seenTitles.current.has(key)) return false;
+          seenTitles.current.add(key);
+          return true;
+        });
+
+        setResults(localItems);
+      } catch (e) {
+        console.error("local search error:", e);
+      } finally {
+        setLoadingLocal(false);
+      }
+
+      // ==============================
+      // STEP 2: Fetch provider satu-satu, tampilkan langsung
+      // ==============================
+      setLoadingProviders(true);
+
+      await Promise.allSettled(
+        PROVIDERS.map(async (provider) => {
+          try {
+            const res = await fetch(
+              `${API}/search-provider?q=${encodeURIComponent(query)}&provider=${provider}`
+            );
+            const data = await res.json();
+
+            if (!isActive.value) return;
+
+            const newItems = (data.items || []).filter(item => {
+              const key = item.title.toLowerCase().trim();
+              if (seenTitles.current.has(key)) return false;
+              seenTitles.current.add(key);
+              return true;
+            });
+
+            if (newItems.length > 0) {
+              // 🔥 Append langsung tanpa tunggu provider lain
+              setResults(prev => [...prev, ...newItems]);
+            }
+          } catch (e) {
+            console.error(`provider ${provider} error:`, e);
+          } finally {
+            if (isActive.value) {
+              setDoneProviders(prev => prev + 1);
+            }
+          }
+        })
+      );
+
+      if (isActive.value) setLoadingProviders(false);
+    };
+
+    run();
+
+    return () => { isActive.value = false; };
   }, [query]);
 
-  // ================= INFINITE SCROLL =================
-  useEffect(() => {
-    if (!sentinelRef.current) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        // Kalau sentinel terlihat dan ada next page dan tidak sedang loading
-        if (entry.isIntersecting && hasNext && !loadingMore && !loading) {
-          fetchPage(query, currentPage + 1, true);
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
-  }, [hasNext, loadingMore, loading, currentPage, query]);
-
-  // ================= OPEN DETAIL =================
+  // =========================
+  // OPEN DETAIL
+  // =========================
   const openDetail = async (item) => {
     setSelected(item);
     setDetail(null);
@@ -91,7 +129,6 @@ function SearchContent() {
         `${API}/detail?slug=${encodeURIComponent(item.slug)}`
       );
       const data = await res.json();
-
       setFinalSlug(data.final_slug || item.slug);
       setDetail(data.data);
     } catch (err) {
@@ -99,35 +136,55 @@ function SearchContent() {
     }
   };
 
-  // ================= LOCK SCROLL =================
+  // =========================
+  // LOCK SCROLL & ESC
+  // =========================
   useEffect(() => {
     document.body.style.overflow = selected ? "hidden" : "auto";
     return () => { document.body.style.overflow = "auto"; };
   }, [selected]);
 
-  // ================= ESC CLOSE =================
   useEffect(() => {
-    const handleKey = (e) => {
-      if (e.key === "Escape") setSelected(null);
-    };
+    const handleKey = (e) => { if (e.key === "Escape") setSelected(null); };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
+  const isLoading = loadingLocal || loadingProviders;
+
   return (
     <>
-      {/* TITLE */}
-      <h1 style={styles.heading}>
-        {loading
-          ? `Mencari "${query}"...`
-          : `Ditemukan ${results.length}${hasNext ? "+" : ""} hasil untuk "${query}"`}
-      </h1>
+      {/* TITLE + STATUS */}
+      <div style={styles.statusBar}>
+        <h1 style={styles.heading}>
+          {loadingLocal
+            ? `Mencari "${query}"...`
+            : `${results.length} hasil untuk "${query}"`}
+        </h1>
+
+        {/* Progress provider */}
+        {loadingProviders && (
+          <div style={styles.providerStatus}>
+            <div style={styles.progressBar}>
+              <div
+                style={{
+                  ...styles.progressFill,
+                  width: `${(doneProviders / PROVIDERS.length) * 100}%`
+                }}
+              />
+            </div>
+            <p style={styles.providerText}>
+              Memuat dari provider... ({doneProviders}/{PROVIDERS.length})
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* GRID */}
       <div style={styles.grid}>
 
-        {/* SKELETON saat loading pertama */}
-        {loading &&
+        {/* SKELETON hanya saat loading lokal */}
+        {loadingLocal &&
           Array.from({ length: 12 }).map((_, i) => (
             <div key={i} style={styles.skeletonCard}>
               <div style={styles.skeletonImage}></div>
@@ -135,44 +192,38 @@ function SearchContent() {
             </div>
           ))}
 
-        {/* DATA */}
-        {!loading &&
-          results.map((item, index) => (
-            <div
-              key={`${item.slug}-${index}`}
-              className="card-item"
-              style={styles.card}
-              onClick={() => openDetail(item)}
-            >
+        {/* DATA — muncul bertahap */}
+        {results.map((item, index) => (
+          <div
+            key={`${item.slug}-${index}`}
+            className="card-item"
+            style={styles.card}
+            onClick={() => openDetail(item)}
+          >
+            {item.thumbnail ? (
               <img
                 src={item.thumbnail}
                 alt={item.title}
                 loading="lazy"
                 style={styles.img}
+                onError={(e) => { e.target.style.display = "none"; }}
               />
-              <div className="overlay" style={styles.overlay}></div>
-              <div className="info" style={styles.info}>
-                {item.tags?.join(", ")}
+            ) : (
+              <div style={styles.noThumb}>
+                <span style={{ fontSize: 10, color: "#666" }}>No Image</span>
               </div>
-              <div style={styles.title}>{item.title}</div>
-            </div>
-          ))}
-
-        {/* SKELETON saat load more */}
-        {loadingMore &&
-          Array.from({ length: 6 }).map((_, i) => (
-            <div key={`more-${i}`} style={styles.skeletonCard}>
-              <div style={styles.skeletonImage}></div>
-              <div style={styles.skeletonTitle}></div>
-            </div>
-          ))}
+            )}
+            <div className="overlay" style={styles.overlay}></div>
+            {item.type === "import" && (
+              <div style={styles.importBadge}>{item.provider || "import"}</div>
+            )}
+            <div style={styles.title}>{item.title}</div>
+          </div>
+        ))}
       </div>
 
-      {/* SENTINEL — elemen tak terlihat di bawah grid untuk trigger load more */}
-      <div ref={sentinelRef} style={{ height: 1 }} />
-
       {/* EMPTY */}
-      {!loading && results.length === 0 && (
+      {!isLoading && results.length === 0 && (
         <p style={styles.empty}>Drama tidak ditemukan.</p>
       )}
 
@@ -184,12 +235,28 @@ function SearchContent() {
               <div style={styles.modalLoading}>
                 <div style={styles.spinner}></div>
                 <p style={{ color: "#aaa", marginTop: 10, fontSize: 13 }}>
-                  Memuat detail...
+                  {selected.type === "import"
+                    ? "Mengimpor drama, harap tunggu..."
+                    : "Memuat detail..."}
                 </p>
+                {selected.type === "import" && (
+                  <p style={{ color: "#555", fontSize: 11, marginTop: 5 }}>
+                    Proses ini bisa 10-30 detik
+                  </p>
+                )}
+              </div>
+            ) : detail.error ? (
+              <div style={{ color: "red", padding: 20, textAlign: "center" }}>
+                <p>Gagal memuat detail.</p>
+                <button onClick={() => setSelected(null)} style={styles.closeBtn}>
+                  Tutup
+                </button>
               </div>
             ) : (
               <>
-                <img src={detail.thumbnail} style={styles.modalImg} alt={detail.title} />
+                {detail.thumbnail && (
+                  <img src={detail.thumbnail} style={styles.modalImg} alt={detail.title} />
+                )}
                 <h2 style={{ margin: "10px 0 5px", fontSize: 16 }}>{detail.title}</h2>
                 <p style={styles.desc}>{detail.description}</p>
                 <p style={{ fontSize: 13, color: "#aaa" }}>
@@ -227,13 +294,12 @@ export default function SearchFullPage() {
 
       <style>{`
         .card-item:hover {
-          transform: scale(1.08);
+          transform: scale(1.05);
           z-index: 2;
-          box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+          box-shadow: 0 8px 25px rgba(0,0,0,0.6);
         }
         .card-item:hover .overlay { opacity: 1; }
-        .card-item:hover .info { opacity: 1; }
-        .card-item:hover img { filter: brightness(1.2); }
+        .card-item:hover img { filter: brightness(1.15); }
         @keyframes shimmer {
           0% { background-position: 200% 0; }
           100% { background-position: -200% 0; }
@@ -242,6 +308,11 @@ export default function SearchFullPage() {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .card-item { animation: fadeIn 0.3s ease; }
       `}</style>
     </div>
   );
@@ -258,59 +329,86 @@ const styles = {
   },
   header: { marginBottom: 20, paddingTop: 10 },
   backBtn: { color: "red", textDecoration: "none", fontWeight: "bold", fontSize: 15 },
-  heading: { fontSize: 20, marginBottom: 20, paddingLeft: 5 },
+  statusBar: { marginBottom: 15 },
+  heading: { fontSize: 18, margin: "0 0 8px" },
+  providerStatus: { marginBottom: 10 },
+  progressBar: {
+    width: "100%",
+    height: 3,
+    background: "#222",
+    borderRadius: 2,
+    overflow: "hidden",
+    marginBottom: 5,
+  },
+  progressFill: {
+    height: "100%",
+    background: "red",
+    borderRadius: 2,
+    transition: "width 0.3s ease",
+  },
+  providerText: { fontSize: 11, color: "#555", margin: 0 },
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))",
     gap: 10,
   },
   card: {
     cursor: "pointer",
     position: "relative",
-    transition: "transform 0.3s ease, box-shadow 0.3s ease",
+    transition: "transform 0.2s ease, box-shadow 0.2s ease",
   },
   img: {
     width: "100%",
-    borderRadius: 10,
+    borderRadius: 8,
     aspectRatio: "2/3",
     objectFit: "cover",
-    transition: "filter 0.3s",
+    display: "block",
+  },
+  noThumb: {
+    width: "100%",
+    aspectRatio: "2/3",
+    borderRadius: 8,
+    background: "#1a1a1a",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  overlay: {
+    position: "absolute",
+    inset: 0,
+    borderRadius: 8,
+    background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent 60%)",
+    opacity: 0,
+    transition: "opacity 0.2s",
+  },
+  importBadge: {
+    position: "absolute",
+    top: 5,
+    right: 5,
+    background: "rgba(255,0,0,0.8)",
+    color: "white",
+    fontSize: 8,
+    padding: "2px 5px",
+    borderRadius: 3,
+    textTransform: "uppercase",
   },
   title: {
-    fontSize: 12,
-    color: "white",
+    fontSize: 11,
+    color: "#ddd",
     textAlign: "center",
     marginTop: 5,
     overflow: "hidden",
     display: "-webkit-box",
     WebkitLineClamp: 2,
     WebkitBoxOrient: "vertical",
-    minHeight: 32,
+    minHeight: 30,
+    lineHeight: 1.3,
   },
-  overlay: {
-    position: "absolute",
-    inset: 0,
-    borderRadius: 10,
-    background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent)",
-    opacity: 0,
-    transition: "opacity 0.3s",
-  },
-  info: {
-    position: "absolute",
-    bottom: 25,
-    left: 8,
-    right: 8,
-    fontSize: 10,
-    color: "#ccc",
-    opacity: 0,
-    transition: "opacity 0.3s",
-    zIndex: 2,
-  },
-  empty: { textAlign: "center", color: "#888", marginTop: 50 },
+  empty: { textAlign: "center", color: "#555", marginTop: 60, fontSize: 14 },
   modalOverlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.8)",
+    background: "rgba(0,0,0,0.85)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -319,58 +417,59 @@ const styles = {
   modalBox: {
     background: "#111",
     padding: 20,
-    borderRadius: 10,
+    borderRadius: 12,
     maxWidth: 400,
     width: "90%",
     color: "white",
-    maxHeight: "80vh",
+    maxHeight: "85vh",
     overflowY: "auto",
   },
   modalLoading: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    padding: "30px 0",
+    padding: "40px 0",
   },
   spinner: {
-    width: 30,
-    height: 30,
+    width: 32,
+    height: 32,
     border: "3px solid #333",
     borderTop: "3px solid red",
     borderRadius: "50%",
     animation: "spin 0.8s linear infinite",
   },
-  modalImg: { width: "100%", borderRadius: 10 },
-  desc: { fontSize: 13, marginTop: 10, color: "#bbb", lineHeight: 1.5 },
+  modalImg: { width: "100%", borderRadius: 8 },
+  desc: { fontSize: 12, marginTop: 8, color: "#bbb", lineHeight: 1.5 },
   btnGroup: { marginTop: 15, display: "flex", gap: 10 },
   playBtn: {
     flex: 1,
     background: "red",
     color: "white",
     border: "none",
-    padding: 10,
+    padding: "10px 0",
     borderRadius: 6,
     cursor: "pointer",
     fontSize: 14,
+    fontWeight: "bold",
   },
   closeBtn: {
     flex: 1,
-    background: "#333",
+    background: "#2a2a2a",
     color: "white",
     border: "none",
-    padding: 10,
+    padding: "10px 0",
     borderRadius: 6,
     cursor: "pointer",
     fontSize: 14,
   },
-  skeletonCard: { borderRadius: 10 },
+  skeletonCard: { borderRadius: 8 },
   skeletonImage: {
     width: "100%",
     aspectRatio: "2/3",
-    borderRadius: 10,
-    background: "linear-gradient(90deg, #222 25%, #333 50%, #222 75%)",
+    borderRadius: 8,
+    background: "linear-gradient(90deg, #181818 25%, #242424 50%, #181818 75%)",
     backgroundSize: "200% 100%",
     animation: "shimmer 1.5s infinite",
   },
-  skeletonTitle: { height: 10, marginTop: 6, borderRadius: 4, background: "#222" },
+  skeletonTitle: { height: 9, marginTop: 5, borderRadius: 3, background: "#1a1a1a" },
 };
