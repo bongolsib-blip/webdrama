@@ -93,9 +93,6 @@ export default function PlayerPage() {
               );
               
               const pollData = await pollRes.json();
-              
-              console.log("POLL RESULT", pollData);
-              const pollData = await pollRes.json();
   
               console.log(`[poll ${i+1}]`, pollData);
   
