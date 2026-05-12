@@ -71,7 +71,16 @@ export default function PlayerPage() {
               await new Promise(r => setTimeout(r, 3000));
   
               const pollRes = await fetch(
-                `https://drama-liart.vercel.app/poll-import?task_id=${taskId}`
+                `https://drama-liart.vercel.app/poll-import?task_id=${taskId}`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    cookies: startData.cookies
+                  })
+                }
               );
               const pollData = await pollRes.json();
   
