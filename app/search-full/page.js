@@ -120,20 +120,96 @@ function SearchContent() {
   // OPEN DETAIL
   // =========================
   const openDetail = async (item) => {
-    setSelected(item);
-    setDetail(null);
-    setFinalSlug(null);
+    if (!slug) return;
+    const isActive = { value: true };
+  
+    const loadDetail = async () => {
+      try {
+        let slugToUse = slug;
+  
+        if (slug.startsWith("import")) {
+          // STEP 1: Trigger import, dapat task_id
+          console.log("START IMPORT");
 
-    try {
-      const res = await fetch(
-        `${API}/detail?slug=${encodeURIComponent(item.slug)}`
-      );
-      const data = await res.json();
-      setFinalSlug(data.final_slug || item.slug);
-      setDetail(data.data);
-    } catch (err) {
-      console.error("Detail error:", err);
-    }
+          const startRes = await fetch(
+            `https://drama-liart.vercel.app/start-import?slug=${encodeURIComponent(slug)}`
+          );
+          
+          console.log("STATUS", startRes.status);
+          
+          const startData = await startRes.json();
+          
+          console.log("START DATA", startData);
+  
+          if (startData.status === "success") {
+            // Langsung dapat slug (drama sudah ada)
+            slugToUse = startData.final_slug;
+  
+          } else if (startData.task_id) {
+            // STEP 2: Poll sampai selesai
+            const taskId = startData.task_id;
+            let resolved = false;
+  
+            for (let i = 0; i < 40; i++) { // max 40 × 3 detik = 2 menit
+              if (!isActive.value) return;
+  
+              await new Promise(r => setTimeout(r, 3000));
+  
+              console.log("POLLING...", i + 1);
+
+              const pollRes = await fetch(
+                `https://drama-liart.vercel.app/poll-import?task_id=${taskId}`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    cookies: startData.cookies
+                  })
+                }
+              );
+              
+              const pollData = await pollRes.json();
+  
+              console.log(`[poll ${i+1}]`, pollData);
+  
+              if (pollData.status === "success" && pollData.final_slug) {
+                slugToUse = pollData.final_slug;
+                resolved = true;
+                break;
+              }
+  
+              if (pollData.status === "error") {
+                console.error("Import error:", pollData.message);
+                break;
+              }
+              // status "processing" → lanjut polling
+            }
+  
+            if (!resolved) {
+              console.error("Import timeout");
+              return;
+            }
+          } else {
+            console.error("start-import gagal:", startData);
+            return;
+          }
+        }
+  
+        if (!isActive.value) return;
+  
+        // Fetch detail dengan slug bersih
+        const res = await fetch(
+          `https://drama-liart.vercel.app/detail?slug=${slugToUse}`
+        );
+        const data = await res.json();
+        setDetail(data.data);
+        setFinalSlug(data.final_slug || slugToUse);
+  
+      } catch (e) {
+        console.error("loadDetail error:", e);
+      }
   };
 
   // =========================
