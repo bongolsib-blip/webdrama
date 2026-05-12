@@ -120,98 +120,113 @@ function SearchContent() {
   // OPEN DETAIL
   // =========================
   const openDetail = async (item) => {
-    if (!slug) return;
-    const isActive = { value: true };
+    setSelected(item);
+    setDetail(null);
   
-    const loadDetail = async () => {
-      try {
-        let slugToUse = slug;
+    const slug = item.slug;
   
-        if (slug.startsWith("import")) {
-          // STEP 1: Trigger import, dapat task_id
-          console.log("START IMPORT");
-
-          const startRes = await fetch(
-            `https://drama-liart.vercel.app/start-import?slug=${encodeURIComponent(slug)}`
-          );
-          
-          console.log("STATUS", startRes.status);
-          
-          const startData = await startRes.json();
-          
-          console.log("START DATA", startData);
+    try {
+      let slugToUse = slug;
   
-          if (startData.status === "success") {
-            // Langsung dapat slug (drama sudah ada)
-            slugToUse = startData.final_slug;
+      // =========================
+      // IMPORT DRAMA
+      // =========================
+      if (slug.startsWith("import")) {
   
-          } else if (startData.task_id) {
-            // STEP 2: Poll sampai selesai
-            const taskId = startData.task_id;
-            let resolved = false;
+        console.log("START IMPORT");
   
-            for (let i = 0; i < 40; i++) { // max 40 × 3 detik = 2 menit
-              if (!isActive.value) return;
+        const startRes = await fetch(
+          `${API}/start-import?slug=${encodeURIComponent(slug)}`
+        );
   
-              await new Promise(r => setTimeout(r, 3000));
+        console.log("STATUS", startRes.status);
   
-              console.log("POLLING...", i + 1);
-
-              const pollRes = await fetch(
-                `https://drama-liart.vercel.app/poll-import?task_id=${taskId}`,
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
-                    cookies: startData.cookies
-                  })
-                }
-              );
-              
-              const pollData = await pollRes.json();
+        const startData = await startRes.json();
   
-              console.log(`[poll ${i+1}]`, pollData);
+        console.log("START DATA", startData);
   
-              if (pollData.status === "success" && pollData.final_slug) {
-                slugToUse = pollData.final_slug;
-                resolved = true;
-                break;
-              }
-  
-              if (pollData.status === "error") {
-                console.error("Import error:", pollData.message);
-                break;
-              }
-              // status "processing" → lanjut polling
-            }
-  
-            if (!resolved) {
-              console.error("Import timeout");
-              return;
-            }
-          } else {
-            console.error("start-import gagal:", startData);
-            return;
-          }
+        // langsung berhasil
+        if (startData.status === "success") {
+          slugToUse = startData.final_slug;
         }
   
-        if (!isActive.value) return;
+        // polling
+        else if (startData.task_id) {
   
-        // Fetch detail dengan slug bersih
-        const res = await fetch(
-          `https://drama-liart.vercel.app/detail?slug=${slugToUse}`
-        );
-        const data = await res.json();
-        setDetail(data.data);
-        setFinalSlug(data.final_slug || slugToUse);
+          const taskId = startData.task_id;
+          let resolved = false;
   
-      } catch (e) {
-        console.error("loadDetail error:", e);
+          for (let i = 0; i < 40; i++) {
+  
+            await new Promise(r => setTimeout(r, 3000));
+  
+            console.log("POLLING...", i + 1);
+  
+            const pollRes = await fetch(
+              `${API}/poll-import?task_id=${taskId}`
+            );
+  
+            const pollData = await pollRes.json();
+  
+            console.log("POLL RESULT", pollData);
+  
+            if (
+              pollData.status === "success" &&
+              pollData.final_slug
+            ) {
+              slugToUse = pollData.final_slug;
+              resolved = true;
+              break;
+            }
+  
+            if (pollData.status === "error") {
+              console.error("Import error:", pollData.message);
+              break;
+            }
+          }
+  
+          if (!resolved) {
+            setDetail({
+              error: true
+            });
+            return;
+          }
+        } else {
+          console.error("start-import gagal:", startData);
+  
+          setDetail({
+            error: true
+          });
+  
+          return;
+        }
       }
+  
+      // =========================
+      // FETCH DETAIL
+      // =========================
+      console.log("FETCH DETAIL", slugToUse);
+  
+      const res = await fetch(
+        `${API}/detail?slug=${slugToUse}`
+      );
+  
+      const data = await res.json();
+  
+      console.log("DETAIL DATA", data);
+  
+      setDetail(data.data);
+      setFinalSlug(data.final_slug || slugToUse);
+  
+    } catch (e) {
+  
+      console.error("openDetail error:", e);
+  
+      setDetail({
+        error: true
+      });
+    }
   };
-
   // =========================
   // LOCK SCROLL & ESC
   // =========================
