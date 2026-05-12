@@ -169,25 +169,18 @@ export default function PlayerPage() {
     if (data.video_url) {
 
       // 🔥 DETEKSI PROXY
-      if (data.video_url.includes("/stream/proxy")) {
-        console.log("❌ proxy blocked");
-
-        const video = videoRef.current;
-        if (video) {
-          video.pause();
-          video.removeAttribute("src");
-          video.load();
-        }
-
-        setVideoError(true);
-        setVideoUrl("");
-        setIsChanging(false);
-        setAnimClass({ opacity: 1, transform: "translateY(0)" });
-        return;
+      // 🔥 FIX stream/proxy relative url
+      let fixedVideoUrl = data.video_url;
+      
+      if (fixedVideoUrl.startsWith("/stream/proxy")) {
+        fixedVideoUrl =
+          `https://narto-drama.com${fixedVideoUrl}`;
+      
+        console.log("FIXED URL", fixedVideoUrl);
       }
 
       // ✅ NORMAL VIDEO
-      setVideoUrl(data.video_url);
+      setVideoUrl(fixedVideoUrl);
       setEpisode(ep);
 
       setTimeout(() => {
