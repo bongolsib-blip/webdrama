@@ -342,15 +342,41 @@ export default function PlayerPage() {
     }
   
     if (videoUrl.includes(".m3u8") && Hls.isSupported()) {
-      const hls = new Hls();
-      hls.loadSource(videoUrl);
-      hls.attachMedia(video);
-  
-      video.hls = hls;
-  
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        video.play().catch(() => {});
-      });
+
+      const createHlsPlayer = (source) => {
+    
+        const hls = new Hls();
+    
+        hls.loadSource(source);
+        hls.attachMedia(video);
+    
+        video.hls = hls;
+    
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play().catch(() => {});
+        });
+    
+        hls.on(Hls.Events.ERROR, (_, data) => {
+    
+          console.log("HLS ERROR", data);
+    
+          // 🔥 kalau gagal direct → fallback proxy
+          if (data.fatal && !source.includes("/proxy-hls")) {
+    
+            console.log("TRY PROXY");
+    
+            hls.destroy();
+    
+            const proxied =
+              `https://drama-liart.vercel.app/proxy-hls?url=${encodeURIComponent(videoUrl)}`;
+    
+            createHlsPlayer(proxied);
+          }
+        });
+      };
+    
+      // 🔥 coba direct dulu
+      createHlsPlayer(videoUrl);
   
     } else {
       video.src = videoUrl;
