@@ -43,33 +43,64 @@ export default function PlayerPage() {
   // --- 2. FETCH DETAIL ---
   useEffect(() => {
     if (!slug) return;
+    const isActive = { value: true };
   
     const loadDetail = async () => {
       try {
         let slugToUse = slug;
   
-        // Jika import slug → polling check-import dulu
         if (slug.startsWith("import")) {
-          let resolved = false;
-          for (let i = 0; i < 15; i++) {
-            const res = await fetch(
-              `https://drama-liart.vercel.app/check-import?slug=${encodeURIComponent(slug)}`
-            );
-            const data = await res.json();
+          // STEP 1: Trigger import, dapat task_id
+          const startRes = await fetch(
+            `https://drama-liart.vercel.app/start-import?slug=${encodeURIComponent(slug)}`
+          );
+          const startData = await startRes.json();
   
-            if (data.status === "success" && data.final_slug) {
-              slugToUse = data.final_slug;
-              resolved = true;
-              break;
+          if (startData.status === "success") {
+            // Langsung dapat slug (drama sudah ada)
+            slugToUse = startData.final_slug;
+  
+          } else if (startData.task_id) {
+            // STEP 2: Poll sampai selesai
+            const taskId = startData.task_id;
+            let resolved = false;
+  
+            for (let i = 0; i < 40; i++) { // max 40 × 3 detik = 2 menit
+              if (!isActive.value) return;
+  
+              await new Promise(r => setTimeout(r, 3000));
+  
+              const pollRes = await fetch(
+                `https://drama-liart.vercel.app/poll-import?task_id=${taskId}`
+              );
+              const pollData = await pollRes.json();
+  
+              console.log(`[poll ${i+1}]`, pollData);
+  
+              if (pollData.status === "success" && pollData.final_slug) {
+                slugToUse = pollData.final_slug;
+                resolved = true;
+                break;
+              }
+  
+              if (pollData.status === "error") {
+                console.error("Import error:", pollData.message);
+                break;
+              }
+              // status "processing" → lanjut polling
             }
-            await new Promise(r => setTimeout(r, 3000));
-          }
   
-          if (!resolved) {
-            console.error("Import gagal");
+            if (!resolved) {
+              console.error("Import timeout");
+              return;
+            }
+          } else {
+            console.error("start-import gagal:", startData);
             return;
           }
         }
+  
+        if (!isActive.value) return;
   
         // Fetch detail dengan slug bersih
         const res = await fetch(
@@ -77,13 +108,15 @@ export default function PlayerPage() {
         );
         const data = await res.json();
         setDetail(data.data);
-        setFinalSlug(data.final_slug || slugToUse); // 🔥 simpan final slug
+        setFinalSlug(data.final_slug || slugToUse);
+  
       } catch (e) {
         console.error("loadDetail error:", e);
       }
     };
   
     loadDetail();
+    return () => { isActive.value = false; };
   }, [slug]);
 
   // --- 3. LOAD EPISODE ---
