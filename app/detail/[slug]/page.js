@@ -341,45 +341,31 @@ export default function PlayerPage() {
       video.hls.destroy();
     }
   
-    if (videoUrl.includes(".m3u8") && Hls.isSupported()) {
-
-      const createHlsPlayer = (source) => {
-    
-        const hls = new Hls();
-    
-        hls.loadSource(source);
-        hls.attachMedia(video);
-    
-        video.hls = hls;
-    
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          video.play().catch(() => {});
-        });
-    
-        hls.on(Hls.Events.ERROR, (_, data) => {
-    
-          console.log("HLS ERROR", data);
-    
-          // 🔥 kalau gagal direct → fallback proxy
-          if (data.fatal && !source.includes("/proxy-hls")) {
-    
-            console.log("TRY PROXY");
-    
-            hls.destroy();
-    
-            const proxied =
-              `https://drama-liart.vercel.app/proxy-hls?url=${encodeURIComponent(videoUrl)}`;
-    
-            createHlsPlayer(proxied);
-          }
-        });
-      };
-    
-      // 🔥 coba direct dulu
-      createHlsPlayer(videoUrl);
+    // 🔥 SELALU proxy untuk m3u8
+    const finalVideoUrl =
+      videoUrl.includes(".m3u8")
+        ? `https://drama-liart.vercel.app/proxy-hls?url=${encodeURIComponent(videoUrl)}`
+        : videoUrl;
+  
+    if (finalVideoUrl.includes(".m3u8") && Hls.isSupported()) {
+  
+      const hls = new Hls();
+  
+      hls.loadSource(finalVideoUrl);
+      hls.attachMedia(video);
+  
+      video.hls = hls;
+  
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(() => {});
+      });
+  
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        console.log("HLS ERROR", data);
+      });
   
     } else {
-      video.src = videoUrl;
+      video.src = finalVideoUrl;
       video.load();
       video.play().catch(() => {});
     }
