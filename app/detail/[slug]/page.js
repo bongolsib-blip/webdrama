@@ -32,6 +32,7 @@ export default function PlayerPage() {
   const holdTimer = useRef(null);
   const [isHolding, setIsHolding] = useState(false);
   const isHoldingRef = useRef(false);
+  const [finalSlug, setFinalSlug] = useState(null);
 
   // --- 1. FUNGSI FEEDBACK RIPPLE (Mencegah Error) ---
   const showRipple = (type) => {
@@ -41,9 +42,48 @@ export default function PlayerPage() {
 
   // --- 2. FETCH DETAIL ---
   useEffect(() => {
-    fetch(`https://drama-liart.vercel.app/detail?slug=${slug}`)
-      .then((r) => r.json())
-      .then((r) => setDetail(r.data));
+    if (!slug) return;
+  
+    const loadDetail = async () => {
+      try {
+        let slugToUse = slug;
+  
+        // Jika import slug → polling check-import dulu
+        if (slug.startsWith("import")) {
+          let resolved = false;
+          for (let i = 0; i < 15; i++) {
+            const res = await fetch(
+              `https://drama-liart.vercel.app/check-import?slug=${encodeURIComponent(slug)}`
+            );
+            const data = await res.json();
+  
+            if (data.status === "success" && data.final_slug) {
+              slugToUse = data.final_slug;
+              resolved = true;
+              break;
+            }
+            await new Promise(r => setTimeout(r, 3000));
+          }
+  
+          if (!resolved) {
+            console.error("Import gagal");
+            return;
+          }
+        }
+  
+        // Fetch detail dengan slug bersih
+        const res = await fetch(
+          `https://drama-liart.vercel.app/detail?slug=${slugToUse}`
+        );
+        const data = await res.json();
+        setDetail(data.data);
+        setFinalSlug(data.final_slug || slugToUse); // 🔥 simpan final slug
+      } catch (e) {
+        console.error("loadDetail error:", e);
+      }
+    };
+  
+    loadDetail();
   }, [slug]);
 
   // --- 3. LOAD EPISODE ---
@@ -68,7 +108,7 @@ export default function PlayerPage() {
 
   try {
     const res = await fetch(
-      `https://drama-liart.vercel.app/video?slug=${slug}&ep=${ep}`,
+      `https://drama-liart.vercel.app/video?slug=${finalSlug}&ep=${ep}`,
       { signal: abortControllerRef.current.signal }
     );
 
@@ -207,7 +247,7 @@ export default function PlayerPage() {
   
         try {
           const res = await fetch(
-            `https://drama-liart.vercel.app/video?slug=${slug}&ep=${episode + 1}`
+            `https://drama-liart.vercel.app/video?slug=${finalSlug}&ep=${episode + 1}`
           );
           const data = await res.json();
   
@@ -233,12 +273,12 @@ export default function PlayerPage() {
   // --- 5. PREFETCH & AUTO LOAD ---
   useEffect(() => {
     if (!episode || !detail || episode >= detail.total_episode) return;
-    fetch(`https://drama-liart.vercel.app/video?slug=${slug}&ep=${episode + 1}`)
+    fetch(`https://drama-liart.vercel.app/video?slug=${finalSlug}&ep=${episode + 1}`)
       .then((r) => r.json())
       .then((data) => { if (data.video_url) setNextVideo(data.video_url); });
   }, [episode, detail]);
 
-  useEffect(() => { if (detail) loadEpisode(startEp); }, [detail]);
+  useEffect(() => { if (detail && finalSlug) loadEpisode(startEp); }, [detail, finalSlug]);
 
   useEffect(() => {
     const video = videoRef.current;
