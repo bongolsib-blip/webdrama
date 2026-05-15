@@ -172,47 +172,33 @@ export default function TVPage() {
 
   const playDash = async (dashStream, video, showError) => {
     try {
-      // 1. Fetch stream_url via proxy
       const res = await fetch(p(dashStream.stream_url));
-      if (!res.ok) { showError(`DASH offline (${res.status})`); return; }
-      
       const info = await res.json();
-      if (!info.stream_url) { showError("DASH: manifest tidak ditemukan"); return; }
   
       const shaka = (await import("shaka-player")).default;
       shaka.polyfill.installAll();
-      
-      if (!shaka.Player.isBrowserSupported()) { 
-        showError("Browser tidak mendukung DASH"); 
-        return; 
-      }
   
       const player = new shaka.Player(video);
-      
-      // 2. Penanganan DRM (ClearKey)
+  
+      // INI KUNCI AGAR ANTV MENYALA (DRM ClearKey)
       if (info.has_drm && info.drm_key) {
         const [keyId, key] = info.drm_key.split(':');
         player.configure({
           drm: {
-            clearKeys: {
-              [keyId]: key
-            }
+            clearKeys: { [keyId]: key }
           }
         });
       }
   
-      player.addEventListener("error", (event) => {
-        console.error("Shaka error:", event.detail);
-        showError("DASH gagal diputar: " + event.detail.code);
+      await player.load(BASE_EXT + info.stream_url);
+      video.play().catch(() => {
+        video.muted = true;
+        video.play();
       });
   
-      // Gunakan BASE_EXT untuk manifest URL
-      await player.load(BASE_EXT + info.stream_url);
-      video.play().catch(() => {});
-      
-    } catch (e) { 
+    } catch (e) {
       console.error("Dash error:", e);
-      showError("DASH gagal dimuat: " + e.message); 
+      showError("DASH gagal diputar: " + e.message);
     }
   };
 
