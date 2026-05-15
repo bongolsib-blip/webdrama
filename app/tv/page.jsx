@@ -2,410 +2,787 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 
-// Semua request ke API lewat proxy /api/tv untuk bypass CORS
-// HLS segment juga lewat proxy, dengan xhrSetup menambah header x-api-key
-const PROXY    = "/api/tv";
-const BASE_EXT = "https://api.nexoratv.qzz.io/api"; // hanya untuk shaka DASH
+const API_KEY = "ztatv_8ef9a9b28e724cbbd87f068510228c4fd54e3925";
+const BASE = "https://api.nexoratv.qzz.io/api";
 
-// Buat URL proxy: /api/tv?path=/v1/channels&category=nasional
-const p = (path) => {
-  if (!path) return '';
-  // Jika path sudah mengandung http, jangan ditambah PROXY lagi
-  if (path.startsWith('http')) return path;
-  
-  // Pastikan path diawali dengan satu garis miring
-  const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  
-  // Gunakan URLSearchParams agar aman
-  return `${PROXY}?path=${encodeURIComponent(cleanPath)}`;
-};
+const CATEGORIES = [
+  "Semua",
+  "nasional",
+  "berita",
+  "olahraga",
+  "anak",
+  "religi",
+  "hiburan",
+];
 
-const CATEGORIES = ["Semua", "nasional", "berita", "olahraga", "anak", "religi", "hiburan"];
 const CAT_LABELS = {
-  Semua:"🌐 Semua", nasional:"📺 Nasional", berita:"📰 Berita",
-  olahraga:"⚽ Olahraga", anak:"🧒 Anak", religi:"🕌 Religi", hiburan:"🎬 Hiburan",
+  Semua: "🌐 Semua",
+  nasional: "📺 Nasional",
+  berita: "📰 Berita",
+  olahraga: "⚽ Olahraga",
+  anak: "🧒 Anak",
+  religi: "🕌 Religi",
+  hiburan: "🎬 Hiburan",
 };
 
 export default function TVPage() {
-  const [channels, setChannels]           = useState([]);
-  const [filtered, setFiltered]           = useState([]);
-  const [category, setCategory]           = useState("Semua");
-  const [search, setSearch]               = useState("");
-  const [loading, setLoading]             = useState(true);
+  const [channels, setChannels] = useState([]);
+  const [filtered, setFiltered] = useState([]);
+  const [category, setCategory] = useState("Semua");
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+
   const [activeChannel, setActiveChannel] = useState(null);
-  const [epg, setEpg]                     = useState(null);
-  const [epgLoading, setEpgLoading]       = useState(false);
-  const [playerError, setPlayerError]     = useState(false);
-  const [playerMsg, setPlayerMsg]         = useState("");
-  const [sidebarOpen, setSidebarOpen]     = useState(true);
-  const videoRef    = useRef(null);
-  const hlsRef      = useRef(null);
+
+  const [playerError, setPlayerError] = useState(false);
+  const [playerMsg, setPlayerMsg] = useState("");
+
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const videoRef = useRef(null);
+
+  const hlsRef = useRef(null);
+  const shakaRef = useRef(null);
+
   const didAutoPlay = useRef(false);
 
-  // ── Load channels ─────────────────────────────────────────────
+  // =========================
+  // LOAD CHANNELS
+  // =========================
   useEffect(() => {
     const load = async () => {
       setLoading(true);
+
       try {
-        const params = category !== "Semua" ? { category } : {};
-        const res    = await fetch(p("/v1/channels", params));
-        const json   = await res.json();
+        const url =
+          category === "Semua"
+            ? `${BASE}/v1/channels`
+            : `${BASE}/v1/channels?category=${category}`;
+
+        const res = await fetch(url, {
+          headers: {
+            "x-api-key": API_KEY,
+          },
+        });
+
+        const json = await res.json();
+
         setChannels(json.data || []);
-      } catch (e) { console.error("channels:", e); }
-      finally { setLoading(false); }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
     };
+
     load();
   }, [category]);
 
-  // ── Filter search ─────────────────────────────────────────────
+  // =========================
+  // FILTER SEARCH
+  // =========================
   useEffect(() => {
-    setFiltered(!search.trim() ? channels
-      : channels.filter((ch) => ch.name.toLowerCase().includes(search.toLowerCase()))
-    );
-  }, [search, channels]);
-
-  // ── Load EPG ──────────────────────────────────────────────────
-  const loadEpg = useCallback(async (channel) => {
-    setEpgLoading(true); setEpg(null);
-    for (const id of [channel.slug, channel.id].filter(Boolean)) {
-      try {
-        const res  = await fetch(p(`/v1/epg/${id}`));
-        if (!res.ok) continue;
-        const json = await res.json();
-        const rows = json.data || (Array.isArray(json) ? json : null);
-        if (rows?.length) { setEpg(rows); setEpgLoading(false); return; }
-      } catch {}
+    if (!search.trim()) {
+      setFiltered(channels);
+    } else {
+      setFiltered(
+        channels.filter((c) =>
+          c.name.toLowerCase().includes(search.toLowerCase())
+        )
+      );
     }
-    setEpgLoading(false);
-  }, []);
+  }, [channels, search]);
 
-  // ── Destroy HLS ───────────────────────────────────────────────
-  const destroyHls = () => {
-    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+  // =========================
+  // DESTROY PLAYER
+  // =========================
+  const destroyPlayers = () => {
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+
+    if (shakaRef.current) {
+      shakaRef.current.destroy();
+      shakaRef.current = null;
+    }
+
+    const video = videoRef.current;
+
+    if (video) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    }
   };
 
-  // ── Play channel ──────────────────────────────────────────────
-  // ── Play channel ──────────────────────────────────────────────
-  const playChannel = useCallback(async (channel) => {
-    setActiveChannel(channel);
-    setPlayerError(false);
-    setPlayerMsg("");
-    setEpg(null);
-    loadEpg(channel);
-    destroyHls();
-
-    const streams     = channel.streams || [];
-    const hlsStream   = streams.find((s) => s.stream_type === "hls");
-    const dashStream  = streams.find((s) => s.stream_type === "dash");
-    const embedStream = streams.find((s) => s.stream_type === "embed");
-    const video       = videoRef.current;
-    
-    // API KEY untuk Shaka (Gunakan milikmu)
-    const KEY = 'ztatv_8ef9a9b28e724cbbd87f068510228c4fd54e3925';
-
-    const showError = (msg) => { setPlayerError(true); setPlayerMsg(msg || ""); };
-
-    if (hlsStream) {
-      if (!video) return;
-      const Hls = (await import("hls.js")).default;
-
-      if (Hls.isSupported()) {
-        const hls = new Hls({
-          xhrSetup: (xhr, url) => {
-            // Cukup tambahkan header, jangan panggil xhr.open lagi
-            // Jika lewat proxy, header disuntik di Route Handler. 
-            // Jika tembak langsung, butuh header ini:
-            xhr.setRequestHeader('x-api-key', KEY);
-          },
-          // Paksa segmen menggunakan proxy jika manifest menggunakan proxy
-          // (Opsional, tergantung setting Route Handler kamu)
-        });
-
-        // Gunakan p() hanya untuk manifest awal
-        hls.loadSource(p(hlsStream.stream_url));
-        hls.attachMedia(video);
-        
-        hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => (video.muted = true, video.play())));
-        hls.on(Hls.Events.ERROR, (_, data) => {
-          if (data.fatal) {
-            if (dashStream) playDash(dashStream, video, showError);
-            else showError("Gagal memuat HLS");
-          }
-        });
-        hlsRef.current = hls;
-      } else {
-        video.src = p(hlsStream.stream_url);
-      }
-
-    } else if (dashStream) {
-      playDash(dashStream, video, showError);
-    } else if (!embedStream) {
-      showError("Tidak ada stream");
-    }
-  }, [loadEpg]);
-
-  // ── Perbaikan DASH (Shaka) ──────────────────────────────────
+  // =========================
+  // PLAY DASH
+  // =========================
   const playDash = async (dashStream, video, showError) => {
-    const KEY = 'ztatv_8ef9a9b28e724cbbd87f068510228c4fd54e3925'; 
-    const BASE_URL = 'https://api.nexoratv.qzz.io/api';
-
     try {
-      // 1. Fetch info manifest (Lewat Proxy)
-      const res = await fetch(p(dashStream.stream_url), {
-        headers: { 'x-api-key': KEY }
-      });
+      // ambil info DASH
+      const res = await fetch(
+        BASE + dashStream.stream_url,
+        {
+          headers: {
+            "x-api-key": API_KEY,
+          },
+        }
+      );
+
       const info = await res.json();
-      
-      // Bersihkan path agar tidak terjadi /api/api
-      const manifestPath = info.stream_url.startsWith('/api') 
-                           ? info.stream_url.replace('/api', '') 
-                           : info.stream_url;
-      const fullManifestUrl = BASE_URL + manifestPath;
 
       const shaka = (await import("shaka-player")).default;
+
       shaka.polyfill.installAll();
 
-      const player = new shaka.Player();
-      await player.attach(video);
-
-      // 2. Network Filter (Kunci utama bypass CORS segmen)
-      player.getNetworkingEngine().registerRequestFilter((type, request) => {
-        request.headers['x-api-key'] = KEY;
-        
-        let uri = request.uris[0];
-        // Jangan proxy ulang jika sudah lewat proxy
-        if (uri.includes('path=')) return;
-
-        // Jika relatif, jadikan absolut dulu
-        if (!uri.startsWith('http')) {
-          const baseDir = fullManifestUrl.substring(0, fullManifestUrl.lastIndexOf('/') + 1);
-          uri = baseDir + uri;
-        }
-
-        // Paksa lewat proxy kamu
-        request.uris[0] = p(uri);
-      });
-
-      // 3. DRM ClearKey
-      if (info.drm_key) {
-        const [kid, key] = info.drm_key.split(':');
-        player.configure({ drm: { clearKeys: { [kid]: key } } });
+      if (!shaka.Player.isBrowserSupported()) {
+        showError("Browser tidak support DASH");
+        return;
       }
 
-      await player.load(p(fullManifestUrl));
-      video.play();
+      const player = new shaka.Player(video);
+
+      shakaRef.current = player;
+
+      // inject API key ke semua request
+      player
+        .getNetworkingEngine()
+        .registerRequestFilter((type, request) => {
+          request.headers["x-api-key"] = API_KEY;
+        });
+
+      // DRM
+      if (info.drm_key) {
+        const [kid, key] = info.drm_key.split(":");
+
+        player.configure({
+          drm: {
+            clearKeys: {
+              [kid]: key,
+            },
+          },
+        });
+      }
+
+      player.addEventListener("error", (e) => {
+        console.error("Shaka Error", e);
+        showError("DASH gagal diputar");
+      });
+
+      // load mpd
+      await player.load(
+        BASE + info.stream_url
+      );
+
+      await video.play();
     } catch (e) {
-      console.error("Shaka Error:", e);
-      showError("DASH Error: " + e.code);
+      console.error(e);
+      showError("Gagal memutar DASH");
     }
   };
-  // Auto-play channel pertama
+
+  // =========================
+  // PLAY CHANNEL
+  // =========================
+  const playChannel = useCallback(async (channel) => {
+    setActiveChannel(channel);
+
+    setPlayerError(false);
+    setPlayerMsg("");
+
+    destroyPlayers();
+
+    const video = videoRef.current;
+
+    if (!video) return;
+
+    const streams = channel.streams || [];
+
+    const hlsStream = streams.find(
+      (s) => s.stream_type === "hls"
+    );
+
+    const dashStream = streams.find(
+      (s) => s.stream_type === "dash"
+    );
+
+    const showError = (msg) => {
+      setPlayerError(true);
+      setPlayerMsg(msg || "");
+    };
+
+    // =========================
+    // HLS
+    // =========================
+    if (hlsStream) {
+      try {
+        const Hls = (await import("hls.js")).default;
+
+        if (Hls.isSupported()) {
+          const hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: true,
+
+            maxBufferLength: 30,
+
+            xhrSetup: (xhr) => {
+              xhr.setRequestHeader(
+                "x-api-key",
+                API_KEY
+              );
+            },
+          });
+
+          hlsRef.current = hls;
+
+          hls.loadSource(
+            BASE + hlsStream.stream_url
+          );
+
+          hls.attachMedia(video);
+
+          hls.on(
+            Hls.Events.MANIFEST_PARSED,
+            async () => {
+              try {
+                await video.play();
+              } catch {
+                video.muted = true;
+                await video.play();
+              }
+            }
+          );
+
+          hls.on(Hls.Events.ERROR, (_, data) => {
+            console.error("HLS Error:", data);
+
+            if (data.fatal) {
+              destroyPlayers();
+
+              // fallback ke DASH
+              if (dashStream) {
+                playDash(
+                  dashStream,
+                  video,
+                  showError
+                );
+              } else {
+                showError(
+                  "Stream tidak tersedia"
+                );
+              }
+            }
+          });
+        } else if (
+          video.canPlayType(
+            "application/vnd.apple.mpegurl"
+          )
+        ) {
+          video.src =
+            BASE + hlsStream.stream_url;
+
+          await video.play();
+        } else {
+          showError(
+            "Browser tidak mendukung HLS"
+          );
+        }
+      } catch (e) {
+        console.error(e);
+        showError("Gagal memutar HLS");
+      }
+    }
+
+    // =========================
+    // DASH
+    // =========================
+    else if (dashStream) {
+      playDash(dashStream, video, showError);
+    }
+
+    // =========================
+    // NO STREAM
+    // =========================
+    else {
+      showError("Tidak ada stream");
+    }
+  }, []);
+
+  // =========================
+  // AUTOPLAY
+  // =========================
   useEffect(() => {
-    if (filtered.length > 0 && !didAutoPlay.current) {
+    if (
+      filtered.length > 0 &&
+      !didAutoPlay.current
+    ) {
       didAutoPlay.current = true;
+
       playChannel(filtered[0]);
     }
   }, [filtered, playChannel]);
 
-  const embedStream = activeChannel?.streams?.find((s) => s.stream_type === "embed");
-  const hlsStream   = activeChannel?.streams?.find((s) => s.stream_type === "hls");
-  const isEmbed     = !!embedStream && !hlsStream;
+  // =========================
+  // EMBED
+  // =========================
+  const embedStream =
+    activeChannel?.streams?.find(
+      (s) => s.stream_type === "embed"
+    );
+
+  const hlsStream =
+    activeChannel?.streams?.find(
+      (s) => s.stream_type === "hls"
+    );
+
+  const isEmbed =
+    !!embedStream && !hlsStream;
 
   return (
     <div style={s.root}>
-      {/* NAV */}
+      {/* NAVBAR */}
       <nav style={s.nav}>
         <div style={s.navLeft}>
-          <a href="/" style={s.navLogo}><span style={{ color:"#e50914" }}>●</span> NONTON</a>
-          <a href="/" style={s.navLink}>Drama</a>
-          <a href="/tv" style={{ ...s.navLink, color:"#fff", borderBottom:"2px solid #e50914", paddingBottom:2 }}>📺 Live TV</a>
+          <a href="/" style={s.logo}>
+            📺 NONTON TV
+          </a>
+
+          <a href="/" style={s.navLink}>
+            Drama
+          </a>
+
+          <a
+            href="/tv"
+            style={{
+              ...s.navLink,
+              color: "#fff",
+            }}
+          >
+            Live TV
+          </a>
         </div>
-        <input value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="Cari channel..." style={s.searchInput} />
+
+        <input
+          style={s.search}
+          placeholder="Cari channel..."
+          value={search}
+          onChange={(e) =>
+            setSearch(e.target.value)
+          }
+        />
       </nav>
 
-      {/* CATEGORY BAR */}
+      {/* CATEGORY */}
       <div style={s.catBar}>
         {CATEGORIES.map((c) => (
-          <button key={c}
-            onClick={() => { setCategory(c); didAutoPlay.current = false; setActiveChannel(null); }}
-            style={{ ...s.catBtn, background: category===c ? "#e50914":"#1a1a1a", border: category===c ? "none":"1px solid #333" }}>
+          <button
+            key={c}
+            onClick={() => {
+              setCategory(c);
+              didAutoPlay.current = false;
+            }}
+            style={{
+              ...s.catBtn,
+              background:
+                category === c
+                  ? "#e50914"
+                  : "#1a1a1a",
+            }}
+          >
             {CAT_LABELS[c]}
           </button>
         ))}
       </div>
 
-      {/* LAYOUT */}
+      {/* CONTENT */}
       <div style={s.layout}>
-
         {/* SIDEBAR */}
-        <aside style={{ ...s.sidebar, width: sidebarOpen?260:0, minWidth: sidebarOpen?260:0 }}>
+        <aside
+          style={{
+            ...s.sidebar,
+            width: sidebarOpen ? 260 : 0,
+          }}
+        >
           <div style={s.sidebarInner}>
-            <div style={s.sidebarHeader}>
-              <span style={{ fontSize:13, color:"#888" }}>{filtered.length} Channel</span>
-            </div>
-            {loading
-              ? Array.from({length:12}).map((_,i) => (
-                  <div key={i} style={s.skeletonItem}>
-                    <div style={s.skeletonThumb}/><div style={s.skeletonText}/>
-                  </div>
-                ))
-              : filtered.map((ch) => {
-                  const isActive = activeChannel?.id === ch.id;
-                  return (
-                    <div key={ch.id||ch.slug} onClick={() => playChannel(ch)}
-                      style={{ ...s.channelItem, background: isActive?"#1e0000":"transparent", borderLeft: isActive?"3px solid #e50914":"3px solid transparent" }}>
-                      {ch.logo
-                        ? <img src={ch.logo} alt={ch.name} style={s.channelLogo} onError={(e)=>(e.target.style.display="none")}/>
-                        : <div style={s.channelLogoFallback}>📺</div>}
-                      <div style={s.channelInfo}>
-                        <div style={s.channelName}>{ch.name}</div>
-                        <div style={s.channelCat}>{ch.category||""}</div>
+            {loading ? (
+              <div style={s.loading}>
+                Loading...
+              </div>
+            ) : (
+              filtered.map((ch) => {
+                const active =
+                  activeChannel?.id === ch.id;
+
+                return (
+                  <div
+                    key={ch.id}
+                    style={{
+                      ...s.channel,
+                      background: active
+                        ? "#1e0000"
+                        : "transparent",
+                    }}
+                    onClick={() =>
+                      playChannel(ch)
+                    }
+                  >
+                    {ch.logo ? (
+                      <img
+                        src={ch.logo}
+                        alt={ch.name}
+                        style={s.channelLogo}
+                      />
+                    ) : (
+                      <div
+                        style={
+                          s.channelLogoFallback
+                        }
+                      >
+                        📺
                       </div>
-                      {isActive && <span style={s.liveBadge}>LIVE</span>}
+                    )}
+
+                    <div style={s.channelInfo}>
+                      <div style={s.channelName}>
+                        {ch.name}
+                      </div>
+
+                      <div style={s.channelCat}>
+                        {ch.category}
+                      </div>
                     </div>
-                  );
-                })
-            }
+                  </div>
+                );
+              })
+            )}
           </div>
         </aside>
 
         {/* PLAYER */}
-        <main style={s.playerArea}>
-          <button onClick={() => setSidebarOpen(v=>!v)} style={s.toggleBtn}>
-            {sidebarOpen?"◀":"▶"}
+        <main style={s.player}>
+          <button
+            style={s.toggle}
+            onClick={() =>
+              setSidebarOpen((v) => !v)
+            }
+          >
+            {sidebarOpen ? "◀" : "▶"}
           </button>
 
           {activeChannel ? (
             <>
-              <div style={s.channelHeader}>
+              {/* HEADER */}
+              <div style={s.header}>
                 {activeChannel.logo && (
-                  <img src={activeChannel.logo} alt={activeChannel.name} style={s.headerLogo}
-                    onError={(e)=>(e.target.style.display="none")}/>
+                  <img
+                    src={activeChannel.logo}
+                    alt={activeChannel.name}
+                    style={s.headerLogo}
+                  />
                 )}
+
                 <div>
-                  <h2 style={s.channelTitle}>{activeChannel.name}</h2>
-                  <span style={s.liveTag}>🔴 LIVE</span>
-                  {activeChannel.category && <span style={s.categoryTag}>{activeChannel.category}</span>}
+                  <h2 style={s.title}>
+                    {activeChannel.name}
+                  </h2>
+
+                  <span style={s.live}>
+                    🔴 LIVE
+                  </span>
                 </div>
               </div>
 
+              {/* VIDEO */}
               <div style={s.videoWrap}>
-                {isEmbed
-                  ? <iframe src={embedStream.embed_url} style={s.iframe} allowFullScreen allow="autoplay;encrypted-media"/>
-                  : playerError
-                    ? <div style={s.errorBox}>
-                        <div style={{fontSize:48}}>📡</div>
-                        <p style={{color:"#fff",marginTop:12}}>Stream tidak tersedia</p>
-                        {playerMsg && <p style={{color:"#666",fontSize:13,marginTop:6,textAlign:"center",maxWidth:300}}>{playerMsg}</p>}
-                        <div style={{display:"flex",gap:10,marginTop:16}}>
-                          <button onClick={()=>playChannel(activeChannel)} style={s.retryBtn}>🔄 Coba Lagi</button>
-                          <button onClick={()=>{
-                            const idx = filtered.findIndex(c=>c.id===activeChannel.id);
-                            const next = filtered[idx+1]||filtered[idx-1];
-                            if(next) playChannel(next);
-                          }} style={s.nextBtn}>⏭ Channel Lain</button>
-                        </div>
-                      </div>
-                    : <video ref={videoRef} controls autoPlay playsInline style={s.video}
-                        onError={()=>{setPlayerError(true);setPlayerMsg("Video gagal dimuat");}}/>
-                }
-              </div>
-
-              {/* EPG */}
-              <div style={s.epgSection}>
-                <h3 style={s.epgTitle}>📅 Jadwal Tayang Hari Ini</h3>
-                {epgLoading
-                  ? <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                      {Array.from({length:5}).map((_,i)=>(
-                        <div key={i} style={{display:"flex",gap:12,alignItems:"center"}}>
-                          <div style={{width:50,height:14,borderRadius:4,background:"#1a1a1a"}}/>
-                          <div style={{flex:1,height:14,borderRadius:4,background:"#1a1a1a"}}/>
-                        </div>
-                      ))}
+                {isEmbed ? (
+                  <iframe
+                    src={embedStream.embed_url}
+                    style={s.iframe}
+                    allowFullScreen
+                    allow="autoplay; encrypted-media"
+                  />
+                ) : playerError ? (
+                  <div style={s.error}>
+                    <div
+                      style={{ fontSize: 50 }}
+                    >
+                      📡
                     </div>
-                  : epg?.length
-                    ? <div style={s.epgList}>
-                        {epg.map((item,i)=>{
-                          const isNow = item.is_now||item.status==="now";
-                          return (
-                            <div key={i} style={{...s.epgItem, background:isNow?"#1e0000":"#0f0f0f", borderLeft:isNow?"3px solid #e50914":"3px solid transparent"}}>
-                              <span style={s.epgTime}>{item.start_time||item.time||"—"}</span>
-                              <span style={{...s.epgName, color:isNow?"#fff":"#888", fontWeight:isNow?600:400}}>
-                                {item.title||item.name||"—"}
-                              </span>
-                              {isNow && <span style={s.nowBadge}>Sekarang</span>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    : <p style={{color:"#444",fontSize:13}}>Jadwal tidak tersedia</p>
-                }
+
+                    <p>
+                      Stream tidak tersedia
+                    </p>
+
+                    <p style={s.errorMsg}>
+                      {playerMsg}
+                    </p>
+
+                    <button
+                      style={s.retry}
+                      onClick={() =>
+                        playChannel(
+                          activeChannel
+                        )
+                      }
+                    >
+                      🔄 Coba Lagi
+                    </button>
+                  </div>
+                ) : (
+                  <video
+                    ref={videoRef}
+                    controls
+                    autoPlay
+                    playsInline
+                    style={s.video}
+                  />
+                )}
               </div>
             </>
           ) : (
             <div style={s.empty}>
-              <div style={{fontSize:64}}>📺</div>
-              <p style={{color:"#555",marginTop:16}}>Pilih channel untuk mulai menonton</p>
+              <div style={{ fontSize: 70 }}>
+                📺
+              </div>
+
+              <p>Pilih channel</p>
             </div>
           )}
         </main>
       </div>
-
-      <style>{`
-        *{box-sizing:border-box;margin:0;padding:0;}
-        ::-webkit-scrollbar{width:4px;}
-        ::-webkit-scrollbar-track{background:#0a0a0a;}
-        ::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px;}
-        ::-webkit-scrollbar-thumb:hover{background:#e50914;}
-        @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-      `}</style>
     </div>
   );
 }
 
 const s = {
-  root:{background:"#000",minHeight:"100vh",color:"#fff",fontFamily:"'Segoe UI',sans-serif",display:"flex",flexDirection:"column"},
-  nav:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px",height:56,background:"#000",borderBottom:"1px solid #1a1a1a",position:"sticky",top:0,zIndex:200},
-  navLeft:{display:"flex",alignItems:"center",gap:24},
-  navLogo:{fontSize:20,fontWeight:900,color:"#fff",textDecoration:"none",letterSpacing:2},
-  navLink:{color:"#aaa",textDecoration:"none",fontSize:14,fontWeight:500},
-  searchInput:{background:"#1a1a1a",border:"1px solid #333",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:14,outline:"none",width:220},
-  catBar:{display:"flex",gap:8,padding:"10px 16px",overflowX:"auto",background:"#050505",borderBottom:"1px solid #111"},
-  catBtn:{padding:"6px 14px",borderRadius:20,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:500,whiteSpace:"nowrap",transition:"all 0.2s"},
-  layout:{display:"flex",flex:1,overflow:"hidden",height:"calc(100vh - 96px)"},
-  sidebar:{background:"#0a0a0a",borderRight:"1px solid #1a1a1a",transition:"width 0.3s ease,min-width 0.3s ease",flexShrink:0,overflow:"hidden"},
-  sidebarInner:{width:260,height:"100%",overflowY:"auto",display:"flex",flexDirection:"column"},
-  sidebarHeader:{padding:"12px 16px",borderBottom:"1px solid #1a1a1a"},
-  channelItem:{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",cursor:"pointer",transition:"background 0.15s",borderBottom:"1px solid #0f0f0f"},
-  channelLogo:{width:36,height:36,objectFit:"contain",borderRadius:6,background:"#1a1a1a",flexShrink:0},
-  channelLogoFallback:{width:36,height:36,background:"#1a1a1a",borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0},
-  channelInfo:{flex:1,minWidth:0},
-  channelName:{fontSize:13,fontWeight:500,color:"#ddd",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},
-  channelCat:{fontSize:11,color:"#555",marginTop:2},
-  liveBadge:{background:"#e50914",color:"#fff",fontSize:9,fontWeight:700,padding:"2px 5px",borderRadius:3,letterSpacing:0.5},
-  skeletonItem:{display:"flex",alignItems:"center",gap:10,padding:"10px 12px"},
-  skeletonThumb:{width:36,height:36,borderRadius:6,background:"linear-gradient(90deg,#1a1a1a 25%,#2a2a2a 50%,#1a1a1a 75%)",backgroundSize:"200% 100%",animation:"shimmer 1.5s infinite",flexShrink:0},
-  skeletonText:{flex:1,height:12,borderRadius:4,background:"#1a1a1a"},
-  playerArea:{flex:1,display:"flex",flexDirection:"column",overflowY:"auto",position:"relative"},
-  toggleBtn:{position:"absolute",left:8,top:10,zIndex:10,background:"#1a1a1a",border:"1px solid #333",color:"#fff",borderRadius:6,width:28,height:28,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"},
-  channelHeader:{display:"flex",alignItems:"center",gap:12,padding:"14px 48px 12px",borderBottom:"1px solid #111",background:"#050505"},
-  headerLogo:{width:44,height:44,objectFit:"contain",borderRadius:8,background:"#111"},
-  channelTitle:{fontSize:18,fontWeight:700,marginBottom:4},
-  liveTag:{fontSize:12,color:"#e50914",fontWeight:700,marginRight:8},
-  categoryTag:{fontSize:11,color:"#888",background:"#1a1a1a",padding:"2px 8px",borderRadius:10},
-  videoWrap:{width:"100%",background:"#000",aspectRatio:"16/9",maxHeight:"55vh"},
-  video:{width:"100%",height:"100%",display:"block",background:"#000"},
-  iframe:{width:"100%",height:"100%",border:"none"},
-  errorBox:{width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#0a0a0a"},
-  retryBtn:{background:"#e50914",color:"#fff",border:"none",padding:"8px 18px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:600},
-  nextBtn:{background:"#222",color:"#fff",border:"1px solid #444",padding:"8px 18px",borderRadius:8,cursor:"pointer",fontSize:13},
-  epgSection:{padding:"16px 20px"},
-  epgTitle:{fontSize:15,fontWeight:600,marginBottom:12},
-  epgList:{display:"flex",flexDirection:"column",gap:3,maxHeight:280,overflowY:"auto"},
-  epgItem:{display:"flex",alignItems:"center",gap:12,padding:"8px 12px",borderRadius:6},
-  epgTime:{fontSize:12,color:"#e50914",fontWeight:600,minWidth:50},
-  epgName:{flex:1,fontSize:13},
-  nowBadge:{fontSize:10,background:"#e50914",color:"#fff",padding:"2px 6px",borderRadius:4,fontWeight:700},
-  empty:{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"},
+  root: {
+    background: "#000",
+    color: "#fff",
+    minHeight: "100vh",
+    display: "flex",
+    flexDirection: "column",
+    fontFamily: "sans-serif",
+  },
+
+  nav: {
+    height: 60,
+    background: "#000",
+    borderBottom: "1px solid #111",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "0 20px",
+  },
+
+  navLeft: {
+    display: "flex",
+    gap: 20,
+    alignItems: "center",
+  },
+
+  logo: {
+    color: "#fff",
+    textDecoration: "none",
+    fontWeight: "bold",
+    fontSize: 20,
+  },
+
+  navLink: {
+    color: "#999",
+    textDecoration: "none",
+  },
+
+  search: {
+    background: "#111",
+    border: "1px solid #333",
+    color: "#fff",
+    padding: "8px 14px",
+    borderRadius: 8,
+    width: 220,
+  },
+
+  catBar: {
+    display: "flex",
+    gap: 8,
+    overflowX: "auto",
+    padding: 12,
+    borderBottom: "1px solid #111",
+  },
+
+  catBtn: {
+    border: "none",
+    color: "#fff",
+    padding: "8px 14px",
+    borderRadius: 20,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+
+  layout: {
+    display: "flex",
+    flex: 1,
+    overflow: "hidden",
+  },
+
+  sidebar: {
+    background: "#050505",
+    borderRight: "1px solid #111",
+    overflow: "hidden",
+    transition: "0.3s",
+  },
+
+  sidebarInner: {
+    width: 260,
+    overflowY: "auto",
+    height: "100%",
+  },
+
+  loading: {
+    padding: 20,
+    color: "#666",
+  },
+
+  channel: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    cursor: "pointer",
+    borderBottom: "1px solid #111",
+  },
+
+  channelLogo: {
+    width: 40,
+    height: 40,
+    objectFit: "contain",
+    background: "#111",
+    borderRadius: 8,
+  },
+
+  channelLogoFallback: {
+    width: 40,
+    height: 40,
+    background: "#111",
+    borderRadius: 8,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  channelInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  channelName: {
+    fontSize: 14,
+    fontWeight: 600,
+  },
+
+  channelCat: {
+    fontSize: 11,
+    color: "#666",
+    marginTop: 2,
+  },
+
+  player: {
+    flex: 1,
+    overflowY: "auto",
+    position: "relative",
+  },
+
+  toggle: {
+    position: "absolute",
+    left: 10,
+    top: 10,
+    zIndex: 10,
+    background: "#111",
+    border: "1px solid #333",
+    color: "#fff",
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    cursor: "pointer",
+  },
+
+  header: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: "14px 50px",
+    borderBottom: "1px solid #111",
+  },
+
+  headerLogo: {
+    width: 50,
+    height: 50,
+    objectFit: "contain",
+    background: "#111",
+    borderRadius: 8,
+  },
+
+  title: {
+    fontSize: 20,
+    marginBottom: 4,
+  },
+
+  live: {
+    color: "#e50914",
+    fontSize: 13,
+    fontWeight: "bold",
+  },
+
+  videoWrap: {
+    width: "100%",
+    aspectRatio: "16/9",
+    background: "#000",
+  },
+
+  video: {
+    width: "100%",
+    height: "100%",
+    background: "#000",
+  },
+
+  iframe: {
+    width: "100%",
+    height: "100%",
+    border: "none",
+  },
+
+  error: {
+    width: "100%",
+    height: "100%",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+
+  errorMsg: {
+    color: "#666",
+    fontSize: 13,
+  },
+
+  retry: {
+    background: "#e50914",
+    border: "none",
+    color: "#fff",
+    padding: "10px 16px",
+    borderRadius: 8,
+    cursor: "pointer",
+  },
+
+  empty: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#555",
+    gap: 10,
+  },
 };
