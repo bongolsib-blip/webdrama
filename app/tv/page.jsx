@@ -105,28 +105,46 @@ export default function TVPage() {
 
       if (Hls.isSupported()) {
         const hls = new Hls({
-          // xhrSetup tidak perlu kirim key karena proxy sudah handle auth
-          // tapi tetap sertakan agar segment .ts juga bisa lewat proxy
           xhrSetup: (xhr, url) => {
-            // Ganti URL absolut ke proxy jika masih mengarah ke API eksternal
-            // (hls.js kadang resolve segment URL secara absolut)
+            // Jika URL mengandung domain asli Zentara, belokkan ke proxy kita
             if (url.includes("nexoratv.qzz.io")) {
-              const segPath = new URL(url).pathname + new URL(url).search;
-              xhr.open("GET", p(segPath), true);
+              const u = new URL(url);
+              // Ambil path setelah '/api'
+              const internalPath = u.pathname.replace("/api", "");
+              const proxied = p(internalPath, Object.fromEntries(u.searchParams));
+              xhr.open("GET", proxied, true);
             }
+            // Kita tidak butuh setRequestHeader 'x-api-key' di sini 
+            // karena API Key sudah disuntikkan oleh server (Route Handler) kita.
           },
           maxBufferLength: 30,
           enableWorker: true,
+          // Tambahkan ini untuk stabilitas retry
+          manifestLoadingMaxRetry: 4,
+          levelLoadingMaxRetry: 4,
         });
+      
         hls.loadSource(proxyUrl);
         hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+        
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play().catch(() => {
+            // Autoplay blocker biasanya mematikan suara (mute) agar bisa play
+            video.muted = true;
+            video.play();
+          });
+        });
+      
         hls.on(Hls.Events.ERROR, (_, data) => {
           if (data.fatal) {
-            console.error("HLS fatal:", data);
-            destroyHls();
-            if (dashStream) playDash(dashStream, video, showError);
-            else showError("Stream tidak dapat diputar saat ini");
+            console.error("HLS fatal error:", data.type);
+            // Jika error 444 atau 401 tetap terjadi, coba fallback ke DASH
+            if (dashStream) {
+              destroyHls();
+              playDash(dashStream, video, showError);
+            } else {
+              showError("Gagal memuat stream (Error: " + data.details + ")");
+            }
           }
         });
         hlsRef.current = hls;
