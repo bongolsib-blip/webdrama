@@ -172,20 +172,48 @@ export default function TVPage() {
 
   const playDash = async (dashStream, video, showError) => {
     try {
-      // Fetch stream_url via proxy → dapat JSON dengan manifest URL
-      const res  = await fetch(p(dashStream.stream_url));
+      // 1. Fetch stream_url via proxy
+      const res = await fetch(p(dashStream.stream_url));
       if (!res.ok) { showError(`DASH offline (${res.status})`); return; }
+      
       const info = await res.json();
       if (!info.stream_url) { showError("DASH: manifest tidak ditemukan"); return; }
-
+  
       const shaka = (await import("shaka-player")).default;
       shaka.polyfill.installAll();
-      if (!shaka.Player.isBrowserSupported()) { showError("Browser tidak mendukung DASH"); return; }
+      
+      if (!shaka.Player.isBrowserSupported()) { 
+        showError("Browser tidak mendukung DASH"); 
+        return; 
+      }
+  
       const player = new shaka.Player(video);
-      player.addEventListener("error", () => showError("DASH gagal diputar"));
+      
+      // 2. Penanganan DRM (ClearKey)
+      if (info.has_drm && info.drm_key) {
+        const [keyId, key] = info.drm_key.split(':');
+        player.configure({
+          drm: {
+            clearKeys: {
+              [keyId]: key
+            }
+          }
+        });
+      }
+  
+      player.addEventListener("error", (event) => {
+        console.error("Shaka error:", event.detail);
+        showError("DASH gagal diputar: " + event.detail.code);
+      });
+  
+      // Gunakan BASE_EXT untuk manifest URL
       await player.load(BASE_EXT + info.stream_url);
       video.play().catch(() => {});
-    } catch (e) { showError("DASH gagal dimuat: " + e.message); }
+      
+    } catch (e) { 
+      console.error("Dash error:", e);
+      showError("DASH gagal dimuat: " + e.message); 
+    }
   };
 
   // Auto-play channel pertama
