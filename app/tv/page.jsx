@@ -85,6 +85,7 @@ export default function TVPage() {
   };
 
   // ── Play channel ──────────────────────────────────────────────
+  // ── Play channel ──────────────────────────────────────────────
   const playChannel = useCallback(async (channel) => {
     setActiveChannel(channel);
     setPlayerError(false);
@@ -98,155 +99,104 @@ export default function TVPage() {
     const dashStream  = streams.find((s) => s.stream_type === "dash");
     const embedStream = streams.find((s) => s.stream_type === "embed");
     const video       = videoRef.current;
+    
+    // API KEY untuk Shaka (Gunakan milikmu)
+    const KEY = 'ztatv_8ef9a9b28e724cbbd87f068510228c4fd54e3925';
 
     const showError = (msg) => { setPlayerError(true); setPlayerMsg(msg || ""); };
 
-    // ── HLS (prioritas utama) ──────────────────────────────────
     if (hlsStream) {
       if (!video) return;
-      // URL HLS lewat proxy — proxy forward ke BASE + stream_url dengan API key
-      const proxyUrl = p(hlsStream.stream_url);
-
-      if (typeof window === "undefined") return;
       const Hls = (await import("hls.js")).default;
 
       if (Hls.isSupported()) {
         const hls = new Hls({
           xhrSetup: (xhr, url) => {
-            // Jika URL mengandung domain asli Zentara, belokkan ke proxy kita
-            if (url.includes("nexoratv.qzz.io")) {
-              const u = new URL(url);
-              // Ambil path setelah '/api'
-              const internalPath = u.pathname.replace("/api", "");
-              const proxied = p(internalPath, Object.fromEntries(u.searchParams));
-              xhr.open("GET", proxied, true);
-            }
-            // Kita tidak butuh setRequestHeader 'x-api-key' di sini 
-            // karena API Key sudah disuntikkan oleh server (Route Handler) kita.
+            // Cukup tambahkan header, jangan panggil xhr.open lagi
+            // Jika lewat proxy, header disuntik di Route Handler. 
+            // Jika tembak langsung, butuh header ini:
+            xhr.setRequestHeader('x-api-key', KEY);
           },
-          maxBufferLength: 30,
-          enableWorker: true,
-          // Tambahkan ini untuk stabilitas retry
-          manifestLoadingMaxRetry: 4,
-          levelLoadingMaxRetry: 4,
+          // Paksa segmen menggunakan proxy jika manifest menggunakan proxy
+          // (Opsional, tergantung setting Route Handler kamu)
         });
-      
-        hls.loadSource(proxyUrl);
+
+        // Gunakan p() hanya untuk manifest awal
+        hls.loadSource(p(hlsStream.stream_url));
         hls.attachMedia(video);
         
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          video.play().catch(() => {
-            // Autoplay blocker biasanya mematikan suara (mute) agar bisa play
-            video.muted = true;
-            video.play();
-          });
-        });
-      
+        hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => (video.muted = true, video.play())));
         hls.on(Hls.Events.ERROR, (_, data) => {
           if (data.fatal) {
-            console.error("HLS fatal error:", data.type);
-            // Jika error 444 atau 401 tetap terjadi, coba fallback ke DASH
-            if (dashStream) {
-              destroyHls();
-              playDash(dashStream, video, showError);
-            } else {
-              showError("Gagal memuat stream (Error: " + data.details + ")");
-            }
+            if (dashStream) playDash(dashStream, video, showError);
+            else showError("Gagal memuat HLS");
           }
         });
         hlsRef.current = hls;
-      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        // Safari native HLS
-        video.src = proxyUrl;
-        video.play().catch(() => {});
       } else {
-        showError("Browser tidak mendukung HLS");
+        video.src = p(hlsStream.stream_url);
       }
 
-    // ── DASH ──────────────────────────────────────────────────
     } else if (dashStream) {
-      if (!video) return;
       playDash(dashStream, video, showError);
-
-    // ── Embed ─────────────────────────────────────────────────
-    } else if (embedStream) {
-      // Ditangani iframe di JSX
-
-    } else {
-      showError("Tidak ada stream untuk channel ini");
+    } else if (!embedStream) {
+      showError("Tidak ada stream");
     }
   }, [loadEpg]);
 
+  // ── Perbaikan DASH (Shaka) ──────────────────────────────────
   const playDash = async (dashStream, video, showError) => {
-    const API_KEY = 'ztatv_8ef9a9b28e724cbbd87f068510228c4fd54e3925'; 
+    const KEY = 'ztatv_8ef9a9b28e724cbbd87f068510228c4fd54e3925'; 
     const BASE_URL = 'https://api.nexoratv.qzz.io/api';
-  
+
     try {
-      // 1. Ambil info stream
+      // 1. Fetch info manifest (Lewat Proxy)
       const res = await fetch(p(dashStream.stream_url), {
-        headers: { 'x-api-key': API_KEY }
+        headers: { 'x-api-key': KEY }
       });
       const info = await res.json();
       
-      // Pastikan URL manifest bersih dari double /api
-      const cleanPath = info.stream_url.replace(/^\/api/, '');
-      const fullManifestUrl = BASE_URL + cleanPath;
-  
+      // Bersihkan path agar tidak terjadi /api/api
+      const manifestPath = info.stream_url.startsWith('/api') 
+                           ? info.stream_url.replace('/api', '') 
+                           : info.stream_url;
+      const fullManifestUrl = BASE_URL + manifestPath;
+
       const shaka = (await import("shaka-player")).default;
       shaka.polyfill.installAll();
-  
-      if (!shaka.Player.isBrowserSupported()) {
-        showError("Browser tidak mendukung DASH");
-        return;
-      }
-  
+
       const player = new shaka.Player();
       await player.attach(video);
-  
-      // 2. NETWORK FILTER (Paling Penting untuk API Key)
+
+      // 2. Network Filter (Kunci utama bypass CORS segmen)
       player.getNetworkingEngine().registerRequestFilter((type, request) => {
-        // WAJIB: Masukkan API Key ke semua request (Manifest, Segmen, License)
-        request.headers['x-api-key'] = API_KEY;
-  
-        // Ambil URL tujuan
+        request.headers['x-api-key'] = KEY;
+        
         let uri = request.uris[0];
-  
-        // Jika URL relatif, sambungkan dengan BASE_URL agar tidak 404
+        // Jangan proxy ulang jika sudah lewat proxy
+        if (uri.includes('path=')) return;
+
+        // Jika relatif, jadikan absolut dulu
         if (!uri.startsWith('http')) {
           const baseDir = fullManifestUrl.substring(0, fullManifestUrl.lastIndexOf('/') + 1);
           uri = baseDir + uri;
         }
-  
-        // Gunakan proxy p() agar tidak terkena CORS
-        if (!uri.includes('path=')) {
-          request.uris[0] = p(uri);
-        }
+
+        // Paksa lewat proxy kamu
+        request.uris[0] = p(uri);
       });
-  
-      // 3. Konfigurasi DRM & Player
-      player.configure({
-        streaming: {
-          jumpLargeGaps: true,
-        },
-        manifest: {
-          dash: { ignoreMinBufferTime: true }
-        }
-      });
-  
+
+      // 3. DRM ClearKey
       if (info.drm_key) {
         const [kid, key] = info.drm_key.split(':');
-        player.configure({
-          drm: { clearKeys: { [kid]: key } }
-        });
+        player.configure({ drm: { clearKeys: { [kid]: key } } });
       }
-  
-      // 4. Mulai Putar
+
       await player.load(p(fullManifestUrl));
       video.play();
-  
     } catch (e) {
       console.error("Shaka Error:", e);
-      showError(`Gagal memutar DASH (Error ${e.code})`);
+      showError("DASH Error: " + e.code);
     }
   };
   // Auto-play channel pertama
