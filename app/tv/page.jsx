@@ -178,51 +178,67 @@ export default function TVPage() {
   }, [loadEpg]);
 
   const playDash = async (dashStream, video, showError) => {
+    const API_KEY = 'ztatv_YOUR_KEY'; // Ganti dengan key kamu
+    const BASE_URL = 'https://api.nexoratv.qzz.io/api';
+  
     try {
-      const res = await fetch(p(dashStream.stream_url));
+      // 1. Fetch info manifest (butuh API KEY)
+      const res = await fetch(p(dashStream.stream_url), {
+        headers: { 'x-api-key': API_KEY }
+      });
       const info = await res.json();
       
+      // URL manifest lengkap dari response API
+      const fullManifestUrl = BASE_URL + info.stream_url;
+      // Base directory untuk segmen (misal: https://.../dash/)
+      const baseDir = fullManifestUrl.substring(0, fullManifestUrl.lastIndexOf('/') + 1);
+  
       const shaka = (await import("shaka-player")).default;
       shaka.polyfill.installAll();
   
       const player = new shaka.Player();
       await player.attach(video);
   
-      // 1. Perbaikan Filter Network (Logika Redirect Segmen)
+      // 2. NETWORK FILTER (Paling Krusial)
       player.getNetworkingEngine().registerRequestFilter((type, request) => {
-        const uri = request.uris[0];
-        
-        // Jika Shaka mencoba memanggil URL relatif yang tidak diawali http
+        // Tambahkan API Key ke SEMUA request (Manifest & Segmen)
+        request.headers['x-api-key'] = API_KEY;
+  
+        let uri = request.uris[0];
+  
+        // Fix URL jika Shaka mencoba akses relatif atau salah domain karena proxy
         if (!uri.startsWith('http')) {
-          // Ambil bagian path dari manifest asli untuk membangun context URL
-          // Contoh: /api/stream/ID/dash/
-          const manifestBase = info.stream_url.substring(0, info.stream_url.lastIndexOf('/') + 1);
-          const newPath = manifestBase + uri;
-          
-          console.log("Fixing relative path to:", newPath);
-          request.uris[0] = p(newPath);
-        } 
-        // Jika mengarah ke domain Vercel tapi tanpa proxy
-        else if (uri.includes(window.location.hostname) && !uri.includes('path=')) {
-          const urlObj = new URL(uri);
-          request.uris[0] = p(urlObj.pathname + urlObj.search);
+          // Jika relatif (misal: index.mp4), gabungkan dengan baseDir asli
+          request.uris[0] = p(baseDir + uri);
+        } else if (uri.includes(window.location.hostname) && !uri.includes('path=')) {
+          // Jika mengarah ke domain sendiri secara tidak sengaja
+          const pathOnly = new URL(uri).pathname; 
+          request.uris[0] = p(BASE_URL + pathOnly);
+        } else if (uri.startsWith(BASE_URL) && !uri.includes('api/tv?path=')) {
+          // Jika mengarah ke API asli tapi belum lewat proxy kamu
+          request.uris[0] = p(uri);
         }
       });
   
-      // 2. Konfigurasi Player (Perbaikan Typo)
+      // 3. DRM Setup (ClearKey)
+      if (info.drm_key) {
+        const [kid, key] = info.drm_key.split(':');
+        player.configure({
+          drm: {
+            clearKeys: { [kid]: key }
+          }
+        });
+      }
+  
+      // 4. Konfigurasi Tambahan
       player.configure({
         streaming: {
-          jumpLargeGaps: true, // Pindah ke sini (tadi kamu taruh di luar objek streaming)
-        },
-        drm: info.has_drm && info.drm_key ? {
-          clearKeys: {
-            [info.drm_key.split(':')[0]]: info.drm_key.split(':')[1]
-          }
-        } : {}
+          jumpLargeGaps: true,
+        }
       });
   
-      // 3. Load Manifest via Proxy
-      await player.load(p(info.stream_url));
+      // 5. Load Manifest
+      await player.load(p(fullManifestUrl));
       
       video.play().catch(() => {
         video.muted = true;
@@ -231,7 +247,7 @@ export default function TVPage() {
   
     } catch (e) {
       console.error("Shaka Error:", e);
-      showError("Gagal memutar stream DASH.");
+      showError("Gagal memutar stream DASH: " + e.message);
     }
   };
 
