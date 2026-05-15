@@ -5,7 +5,6 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const path = searchParams.get("path") || "/v1/channels";
 
-  // forward semua param kecuali "path"
   const forward = new URLSearchParams();
   for (const [k, v] of searchParams.entries()) {
     if (k !== "path") forward.set(k, v);
@@ -14,47 +13,38 @@ export async function GET(request) {
   const url = `${BASE}${path}${qs ? "?" + qs : ""}`;
 
   try {
-    const res = await fetch(url, {
+    const upstream = await fetch(url, {
       headers: { "x-api-key": API_KEY },
-      next: { revalidate: 30 },
     });
 
-    // Untuk stream (HLS/DASH), pipe binary langsung ke client
-    const contentType = res.headers.get("content-type") || "";
+    const contentType = upstream.headers.get("content-type") || "";
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "x-api-key, content-type",
+    };
+
+    // Stream biner (HLS segments, dll) — pipe langsung
     if (
-      contentType.includes("application/vnd.apple.mpegurl") ||
-      contentType.includes("application/x-mpegurl") ||
       contentType.includes("video/") ||
-      path.includes("/stream/")
+      contentType.includes("mpegurl") ||
+      contentType.includes("octet-stream") ||
+      path.startsWith("/stream/")
     ) {
-      const body = await res.arrayBuffer();
+      const body = await upstream.arrayBuffer();
       return new Response(body, {
-        status: res.status,
-        headers: {
-          "Content-Type": contentType || "application/octet-stream",
-          "Access-Control-Allow-Origin": "*",
-        },
+        status: upstream.status,
+        headers: { "Content-Type": contentType, ...corsHeaders },
       });
     }
 
-    // Untuk JSON biasa
-    const text = await res.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      // Jika bukan JSON (misal EPG 404 teks), kembalikan error terstruktur
-      return Response.json(
-        { error: true, status: res.status, message: text.slice(0, 200) },
-        { status: res.status, headers: { "Access-Control-Allow-Origin": "*" } }
-      );
-    }
-
-    return Response.json(data, {
-      status: res.status,
+    // JSON
+    const text = await upstream.text();
+    return new Response(text, {
+      status: upstream.status,
       headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
+        "Content-Type": "application/json",
+        "Cache-Control": "public, s-maxage=30",
+        ...corsHeaders,
       },
     });
   } catch (err) {
@@ -63,4 +53,16 @@ export async function GET(request) {
       { status: 500, headers: { "Access-Control-Allow-Origin": "*" } }
     );
   }
+}
+
+// Preflight
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "x-api-key, content-type",
+    },
+  });
 }
