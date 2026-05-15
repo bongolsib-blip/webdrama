@@ -178,61 +178,61 @@ export default function TVPage() {
   }, [loadEpg]);
 
   const playDash = async (dashStream, video, showError) => {
-    const API_KEY = 'ztatv_YOUR_KEY'; 
-    const BASE_URL = 'https://api.nexoratv.qzz.io/api'; // Tanpa slash di akhir
+    const API_KEY = 'ztatv_8ef9a9b28e724cbbd87f068510228c4fd54e3925'; 
+    const BASE_URL = 'https://api.nexoratv.qzz.io/api';
   
     try {
-      // 1. Fetch info awal
+      // 1. Ambil info stream
       const res = await fetch(p(dashStream.stream_url), {
         headers: { 'x-api-key': API_KEY }
       });
       const info = await res.json();
       
-      // Pastikan info.stream_url tidak double /api
-      let cleanPath = info.stream_url.startsWith('/api') 
-                      ? info.stream_url.replace('/api', '') 
-                      : info.stream_url;
-  
+      // Pastikan URL manifest bersih dari double /api
+      const cleanPath = info.stream_url.replace(/^\/api/, '');
       const fullManifestUrl = BASE_URL + cleanPath;
-      const baseDir = fullManifestUrl.substring(0, fullManifestUrl.lastIndexOf('/') + 1);
   
       const shaka = (await import("shaka-player")).default;
       shaka.polyfill.installAll();
   
+      if (!shaka.Player.isBrowserSupported()) {
+        showError("Browser tidak mendukung DASH");
+        return;
+      }
+  
       const player = new shaka.Player();
       await player.attach(video);
   
-      // 2. Filter Network yang lebih ketat
+      // 2. NETWORK FILTER (Paling Penting untuk API Key)
       player.getNetworkingEngine().registerRequestFilter((type, request) => {
-        // Tambahkan API Key
+        // WAJIB: Masukkan API Key ke semua request (Manifest, Segmen, License)
         request.headers['x-api-key'] = API_KEY;
   
+        // Ambil URL tujuan
         let uri = request.uris[0];
   
-        // JIKA uri sudah mengandung 'path=', berarti sudah diproxy, abaikan.
-        if (uri.includes('path=')) return;
-  
-        // JIKA uri adalah segmen relatif (misal: "index.mp4")
+        // Jika URL relatif, sambungkan dengan BASE_URL agar tidak 404
         if (!uri.startsWith('http')) {
-          request.uris[0] = p(baseDir + uri);
-        } 
-        // JIKA uri mengarah ke API asli tapi belum diproxy
-        else if (uri.startsWith(BASE_URL) || uri.includes('nexoratv.qzz.io')) {
+          const baseDir = fullManifestUrl.substring(0, fullManifestUrl.lastIndexOf('/') + 1);
+          uri = baseDir + uri;
+        }
+  
+        // Gunakan proxy p() agar tidak terkena CORS
+        if (!uri.includes('path=')) {
           request.uris[0] = p(uri);
         }
       });
   
-      // 3. Konfigurasi (Perbaikan typo jumpLargeGaps)
+      // 3. Konfigurasi DRM & Player
       player.configure({
         streaming: {
-          jumpLargeGaps: true
+          jumpLargeGaps: true,
         },
         manifest: {
           dash: { ignoreMinBufferTime: true }
         }
       });
   
-      // DRM
       if (info.drm_key) {
         const [kid, key] = info.drm_key.split(':');
         player.configure({
@@ -240,16 +240,15 @@ export default function TVPage() {
         });
       }
   
-      // 4. Load Manifest (Pastikan lewat proxy p)
+      // 4. Mulai Putar
       await player.load(p(fullManifestUrl));
       video.play();
   
     } catch (e) {
-      console.error("Detail Error:", e);
-      showError(`Error ${e.code || ''}: Gagal memuat stream.`);
+      console.error("Shaka Error:", e);
+      showError(`Gagal memutar DASH (Error ${e.code})`);
     }
   };
-
   // Auto-play channel pertama
   useEffect(() => {
     if (filtered.length > 0 && !didAutoPlay.current) {
