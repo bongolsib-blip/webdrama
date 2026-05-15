@@ -178,19 +178,22 @@ export default function TVPage() {
   }, [loadEpg]);
 
   const playDash = async (dashStream, video, showError) => {
-    const API_KEY = 'ztatv_YOUR_KEY'; // Ganti dengan key kamu
-    const BASE_URL = 'https://api.nexoratv.qzz.io/api';
+    const API_KEY = 'ztatv_YOUR_KEY'; 
+    const BASE_URL = 'https://api.nexoratv.qzz.io/api'; // Tanpa slash di akhir
   
     try {
-      // 1. Fetch info manifest (butuh API KEY)
+      // 1. Fetch info awal
       const res = await fetch(p(dashStream.stream_url), {
         headers: { 'x-api-key': API_KEY }
       });
       const info = await res.json();
       
-      // URL manifest lengkap dari response API
-      const fullManifestUrl = BASE_URL + info.stream_url;
-      // Base directory untuk segmen (misal: https://.../dash/)
+      // Pastikan info.stream_url tidak double /api
+      let cleanPath = info.stream_url.startsWith('/api') 
+                      ? info.stream_url.replace('/api', '') 
+                      : info.stream_url;
+  
+      const fullManifestUrl = BASE_URL + cleanPath;
       const baseDir = fullManifestUrl.substring(0, fullManifestUrl.lastIndexOf('/') + 1);
   
       const shaka = (await import("shaka-player")).default;
@@ -199,55 +202,51 @@ export default function TVPage() {
       const player = new shaka.Player();
       await player.attach(video);
   
-      // 2. NETWORK FILTER (Paling Krusial)
+      // 2. Filter Network yang lebih ketat
       player.getNetworkingEngine().registerRequestFilter((type, request) => {
-        // Tambahkan API Key ke SEMUA request (Manifest & Segmen)
+        // Tambahkan API Key
         request.headers['x-api-key'] = API_KEY;
   
         let uri = request.uris[0];
   
-        // Fix URL jika Shaka mencoba akses relatif atau salah domain karena proxy
+        // JIKA uri sudah mengandung 'path=', berarti sudah diproxy, abaikan.
+        if (uri.includes('path=')) return;
+  
+        // JIKA uri adalah segmen relatif (misal: "index.mp4")
         if (!uri.startsWith('http')) {
-          // Jika relatif (misal: index.mp4), gabungkan dengan baseDir asli
           request.uris[0] = p(baseDir + uri);
-        } else if (uri.includes(window.location.hostname) && !uri.includes('path=')) {
-          // Jika mengarah ke domain sendiri secara tidak sengaja
-          const pathOnly = new URL(uri).pathname; 
-          request.uris[0] = p(BASE_URL + pathOnly);
-        } else if (uri.startsWith(BASE_URL) && !uri.includes('api/tv?path=')) {
-          // Jika mengarah ke API asli tapi belum lewat proxy kamu
+        } 
+        // JIKA uri mengarah ke API asli tapi belum diproxy
+        else if (uri.startsWith(BASE_URL) || uri.includes('nexoratv.qzz.io')) {
           request.uris[0] = p(uri);
         }
       });
   
-      // 3. DRM Setup (ClearKey)
-      if (info.drm_key) {
-        const [kid, key] = info.drm_key.split(':');
-        player.configure({
-          drm: {
-            clearKeys: { [kid]: key }
-          }
-        });
-      }
-  
-      // 4. Konfigurasi Tambahan
+      // 3. Konfigurasi (Perbaikan typo jumpLargeGaps)
       player.configure({
         streaming: {
-          jumpLargeGaps: true,
+          jumpLargeGaps: true
+        },
+        manifest: {
+          dash: { ignoreMinBufferTime: true }
         }
       });
   
-      // 5. Load Manifest
+      // DRM
+      if (info.drm_key) {
+        const [kid, key] = info.drm_key.split(':');
+        player.configure({
+          drm: { clearKeys: { [kid]: key } }
+        });
+      }
+  
+      // 4. Load Manifest (Pastikan lewat proxy p)
       await player.load(p(fullManifestUrl));
-      
-      video.play().catch(() => {
-        video.muted = true;
-        video.play();
-      });
+      video.play();
   
     } catch (e) {
-      console.error("Shaka Error:", e);
-      showError("Gagal memutar stream DASH: " + e.message);
+      console.error("Detail Error:", e);
+      showError(`Error ${e.code || ''}: Gagal memuat stream.`);
     }
   };
 
