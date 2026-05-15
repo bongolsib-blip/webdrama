@@ -8,9 +8,16 @@ const PROXY    = "/api/tv";
 const BASE_EXT = "https://api.nexoratv.qzz.io/api"; // hanya untuk shaka DASH
 
 // Buat URL proxy: /api/tv?path=/v1/channels&category=nasional
-const p = (path, params = {}) => {
-  const qs = new URLSearchParams({ path, ...params }).toString();
-  return `${PROXY}?${qs}`;
+const p = (path) => {
+  if (!path) return '';
+  // Jika path sudah mengandung http, jangan ditambah PROXY lagi
+  if (path.startsWith('http')) return path;
+  
+  // Pastikan path diawali dengan satu garis miring
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  
+  // Gunakan URLSearchParams agar aman
+  return `${PROXY}?path=${encodeURIComponent(cleanPath)}`;
 };
 
 const CATEGORIES = ["Semua", "nasional", "berita", "olahraga", "anak", "religi", "hiburan"];
