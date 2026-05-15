@@ -172,15 +172,21 @@ export default function TVPage() {
 
   const playDash = async (dashStream, video, showError) => {
     try {
+      // 1. Ambil info stream melalui proxy
       const res = await fetch(p(dashStream.stream_url));
       const info = await res.json();
+      
+      // Validasi data
+      if (!info.stream_url) return showError("DASH: URL tidak valid");
   
       const shaka = (await import("shaka-player")).default;
       shaka.polyfill.installAll();
   
-      const player = new shaka.Player(video);
+      const player = new shaka.Player();
+      // Gunakan attach agar tidak deprecated
+      await player.attach(video);
   
-      // INI KUNCI AGAR ANTV MENYALA (DRM ClearKey)
+      // 2. Konfigurasi DRM ClearKey
       if (info.has_drm && info.drm_key) {
         const [keyId, key] = info.drm_key.split(':');
         player.configure({
@@ -190,7 +196,16 @@ export default function TVPage() {
         });
       }
   
-      await player.load(BASE_EXT + info.stream_url);
+      // 3. LOAD MELALUI PROXY (Menghindari CORS & Memperbaiki Double API)
+      // Kita bersihkan path jika ada double /api/api
+      let cleanPath = info.stream_url;
+      if (cleanPath.startsWith('/api')) {
+        cleanPath = cleanPath.replace('/api', '');
+      }
+  
+      // Panggil lewat proxy p()
+      await player.load(p(cleanPath));
+      
       video.play().catch(() => {
         video.muted = true;
         video.play();
@@ -198,7 +213,8 @@ export default function TVPage() {
   
     } catch (e) {
       console.error("Dash error:", e);
-      showError("DASH gagal diputar: " + e.message);
+      // Error 1002 biasanya karena manifest tidak bisa dibaca/CORS
+      showError("Gagal memutar DASH (Code " + (e.code || 'Unknown') + ")");
     }
   };
 
