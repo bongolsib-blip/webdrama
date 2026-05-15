@@ -188,51 +188,50 @@ export default function TVPage() {
       const player = new shaka.Player();
       await player.attach(video);
   
-      // --- TAMBAHKAN BAGIAN INI ---
+      // 1. Perbaikan Filter Network (Logika Redirect Segmen)
       player.getNetworkingEngine().registerRequestFilter((type, request) => {
-        // Jika URL request mengarah ke domain Vercel kamu, 
-        // artinya Shaka mencoba mengambil segmen relatif.
-        if (request.uris[0].includes(window.location.hostname) || !request.uris[0].startsWith('http')) {
+        const uri = request.uris[0];
+        
+        // Jika Shaka mencoba memanggil URL relatif yang tidak diawali http
+        if (!uri.startsWith('http')) {
+          // Ambil bagian path dari manifest asli untuk membangun context URL
+          // Contoh: /api/stream/ID/dash/
+          const manifestBase = info.stream_url.substring(0, info.stream_url.lastIndexOf('/') + 1);
+          const newPath = manifestBase + uri;
           
-          // Kita paksa URL-nya kembali masuk ke sistem proxy p()
-          // Kita ambil nama filenya saja (misal: index_video.mp4)
-          const urlParts = request.uris[0].split('/');
-          const fileName = urlParts[urlParts.length - 1];
-          
-          // Karena manifest dikirim dari Cloudfront, segmen biasanya satu level dengan manifest
-          // Kamu perlu menyesuaikan logikanya agar mengarah ke path asli Cloudfront
-          console.log("Redirecting segment request:", fileName);
+          console.log("Fixing relative path to:", newPath);
+          request.uris[0] = p(newPath);
+        } 
+        // Jika mengarah ke domain Vercel tapi tanpa proxy
+        else if (uri.includes(window.location.hostname) && !uri.includes('path=')) {
+          const urlObj = new URL(uri);
+          request.uris[0] = p(urlObj.pathname + urlObj.search);
         }
       });
-      // ----------------------------
   
-      if (info.has_drm && info.drm_key) {
-        const [keyId, key] = info.drm_key.split(':');
-        player.configure({
-          drm: { clearKeys: { [keyId]: key } }
-        });
-      }
-
+      // 2. Konfigurasi Player (Perbaikan Typo)
       player.configure({
         streaming: {
-          // Memaksa player untuk tidak mengabaikan URL relatif yang aneh
-          jumpLargeGaps: true,
+          jumpLargeGaps: true, // Pindah ke sini (tadi kamu taruh di luar objek streaming)
         },
-        manifest: {
-          dash: {
-            // Ini akan mencoba memperbaiki struktur URL jika manifestnya 'berantakan'
-            ignoreMinBufferTime: true 
+        drm: info.has_drm && info.drm_key ? {
+          clearKeys: {
+            [info.drm_key.split(':')[0]]: info.drm_key.split(':')[1]
           }
-        }
+        } : {}
       });
   
-      // Gunakan URL absolut untuk memicu Shaka menggunakan base URL yang benar
+      // 3. Load Manifest via Proxy
       await player.load(p(info.stream_url));
       
-      video.play();
+      video.play().catch(() => {
+        video.muted = true;
+        video.play();
+      });
+  
     } catch (e) {
-      console.error("Dash error:", e);
-      showError("Gagal memutar DASH");
+      console.error("Shaka Error:", e);
+      showError("Gagal memutar stream DASH.");
     }
   };
 
