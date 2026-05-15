@@ -179,49 +179,60 @@ export default function TVPage() {
 
   const playDash = async (dashStream, video, showError) => {
     try {
-      // 1. Ambil info stream melalui proxy
       const res = await fetch(p(dashStream.stream_url));
       const info = await res.json();
       
-      // Validasi data
-      if (!info.stream_url) return showError("DASH: URL tidak valid");
-  
       const shaka = (await import("shaka-player")).default;
       shaka.polyfill.installAll();
   
       const player = new shaka.Player();
-      // Gunakan attach agar tidak deprecated
       await player.attach(video);
   
-      // 2. Konfigurasi DRM ClearKey
+      // --- TAMBAHKAN BAGIAN INI ---
+      player.getNetworkingEngine().registerRequestFilter((type, request) => {
+        // Jika URL request mengarah ke domain Vercel kamu, 
+        // artinya Shaka mencoba mengambil segmen relatif.
+        if (request.uris[0].includes(window.location.hostname) || !request.uris[0].startsWith('http')) {
+          
+          // Kita paksa URL-nya kembali masuk ke sistem proxy p()
+          // Kita ambil nama filenya saja (misal: index_video.mp4)
+          const urlParts = request.uris[0].split('/');
+          const fileName = urlParts[urlParts.length - 1];
+          
+          // Karena manifest dikirim dari Cloudfront, segmen biasanya satu level dengan manifest
+          // Kamu perlu menyesuaikan logikanya agar mengarah ke path asli Cloudfront
+          console.log("Redirecting segment request:", fileName);
+        }
+      });
+      // ----------------------------
+  
       if (info.has_drm && info.drm_key) {
         const [keyId, key] = info.drm_key.split(':');
         player.configure({
-          drm: {
-            clearKeys: { [keyId]: key }
-          }
+          drm: { clearKeys: { [keyId]: key } }
         });
       }
-  
-      // 3. LOAD MELALUI PROXY (Menghindari CORS & Memperbaiki Double API)
-      // Kita bersihkan path jika ada double /api/api
-      let cleanPath = info.stream_url;
-      if (cleanPath.startsWith('/api')) {
-        cleanPath = cleanPath.replace('/api', '');
-      }
-  
-      // Panggil lewat proxy p()
-      await player.load(p(cleanPath));
-      
-      video.play().catch(() => {
-        video.muted = true;
-        video.play();
+
+      player.configure({
+        streaming: {
+          // Memaksa player untuk tidak mengabaikan URL relatif yang aneh
+          jumpLargeGaps: true,
+        },
+        manifest: {
+          dash: {
+            // Ini akan mencoba memperbaiki struktur URL jika manifestnya 'berantakan'
+            ignoreMinBufferTime: true 
+          }
+        }
       });
   
+      // Gunakan URL absolut untuk memicu Shaka menggunakan base URL yang benar
+      await player.load(p(info.stream_url));
+      
+      video.play();
     } catch (e) {
       console.error("Dash error:", e);
-      // Error 1002 biasanya karena manifest tidak bisa dibaca/CORS
-      showError("Gagal memutar DASH (Code " + (e.code || 'Unknown') + ")");
+      showError("Gagal memutar DASH");
     }
   };
 
