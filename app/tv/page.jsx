@@ -2,17 +2,17 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 
-// ✅ Semua request lewat proxy lokal — tidak kena CORS
-const PROXY = "/api/tv";
+const PROXY    = "/api/tv";
 const API_BASE = "https://api.nexoratv.qzz.io/api";
 
+// Helper: buat URL proxy
 const tv = (path, params = {}) => {
   const qs = new URLSearchParams({ path, ...params }).toString();
   return `${PROXY}?${qs}`;
 };
 
 const CATEGORIES = ["Semua", "nasional", "berita", "olahraga", "anak", "religi", "hiburan"];
-const CATEGORY_LABELS = {
+const CAT_LABELS = {
   Semua: "🌐 Semua", nasional: "📺 Nasional", berita: "📰 Berita",
   olahraga: "⚽ Olahraga", anak: "🧒 Anak", religi: "🕌 Religi", hiburan: "🎬 Hiburan",
 };
@@ -27,81 +27,145 @@ export default function TVPage() {
   const [epg, setEpg]                     = useState(null);
   const [epgLoading, setEpgLoading]       = useState(false);
   const [playerError, setPlayerError]     = useState(false);
+  const [playerMsg, setPlayerMsg]         = useState("");
   const [sidebarOpen, setSidebarOpen]     = useState(true);
-  const videoRef   = useRef(null);
-  const hlsRef     = useRef(null);
+  const videoRef    = useRef(null);
+  const hlsRef      = useRef(null);
   const didAutoPlay = useRef(false);
 
+  // ── Load channels ──────────────────────────────────────────────
   useEffect(() => {
-    const fetchChannels = async () => {
+    const load = async () => {
       setLoading(true);
       try {
         const params = category !== "Semua" ? { category } : {};
-        const res  = await fetch(tv("/v1/channels", params));
-        const json = await res.json();
+        const res    = await fetch(tv("/v1/channels", params));
+        const json   = await res.json();
         setChannels(json.data || []);
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     };
-    fetchChannels();
+    load();
   }, [category]);
 
+  // ── Filter search ──────────────────────────────────────────────
   useEffect(() => {
-    setFiltered(!search.trim() ? channels : channels.filter((ch) =>
-      ch.name.toLowerCase().includes(search.toLowerCase())
-    ));
+    setFiltered(!search.trim() ? channels
+      : channels.filter((ch) => ch.name.toLowerCase().includes(search.toLowerCase()))
+    );
   }, [search, channels]);
 
-  const loadEpg = useCallback(async (channelId) => {
+  // ── Load EPG — coba beberapa format ID ────────────────────────
+  const loadEpg = useCallback(async (channel) => {
     setEpgLoading(true); setEpg(null);
+    // Zentara EPG bisa pakai slug atau numeric id; coba slug dulu
+    const ids = [channel.slug, channel.id].filter(Boolean);
+    for (const id of ids) {
+      try {
+        const res  = await fetch(tv(`/v1/epg/${id}`));
+        const json = await res.json();
+        if (!json.error && (json.data || Array.isArray(json))) {
+          setEpg(json.data || json);
+          setEpgLoading(false);
+          return;
+        }
+      } catch {}
+    }
+    // Fallback: cari via EPG search dengan nama channel
     try {
-      const res  = await fetch(tv(`/v1/epg/${channelId}`));
+      const res  = await fetch(tv("/v1/epg", { search: channel.name }));
       const json = await res.json();
-      setEpg(json.data || json);
-    } catch (e) { console.error(e); }
-    finally { setEpgLoading(false); }
+      if (json.data) setEpg(json.data);
+    } catch {}
+    setEpgLoading(false);
   }, []);
 
-  const playChannel = useCallback(async (channel) => {
-    setActiveChannel(channel); setPlayerError(false); setEpg(null);
-    loadEpg(channel.id || channel.slug);
+  // ── Destroy HLS ───────────────────────────────────────────────
+  const destroyHls = () => {
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+  };
+
+  // ── Try HLS stream ────────────────────────────────────────────
+  const tryHls = async (streamUrl, video, fallback) => {
+    if (typeof window === "undefined") return;
+    const Hls = (await import("hls.js")).default;
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({ maxBufferLength: 30 });
+      hls.loadSource(streamUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+      hls.on(Hls.Events.ERROR, (_, d) => {
+        if (d.fatal) {
+          destroyHls();
+          fallback();
+        }
+      });
+      hlsRef.current = hls;
+    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      // Safari native HLS
+      video.src = streamUrl;
+      video.play().catch(() => {});
+    } else {
+      fallback();
+    }
+  };
+
+  // ── Play channel ──────────────────────────────────────────────
+  const playChannel = useCallback(async (channel) => {
+    setActiveChannel(channel);
+    setPlayerError(false);
+    setPlayerMsg("");
+    setEpg(null);
+    loadEpg(channel);
+    destroyHls();
 
     const streams     = channel.streams || [];
     const hlsStream   = streams.find((s) => s.stream_type === "hls");
     const dashStream  = streams.find((s) => s.stream_type === "dash");
+    const embedStream = streams.find((s) => s.stream_type === "embed");
     const video = videoRef.current;
-    if (!video) return;
+
+    const showError = (msg = "Stream tidak tersedia") => {
+      setPlayerError(true); setPlayerMsg(msg);
+    };
 
     if (hlsStream) {
-      const streamUrl = tv(hlsStream.stream_url);
-      if (typeof window !== "undefined") {
-        const Hls = (await import("hls.js")).default;
-        if (Hls.isSupported()) {
-          const hls = new Hls();
-          hls.loadSource(streamUrl);
-          hls.attachMedia(video);
-          hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
-          hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) setPlayerError(true); });
-          hlsRef.current = hls;
-        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-          video.src = streamUrl; video.play().catch(() => {});
-        } else { setPlayerError(true); }
+      // Coba dua varian URL: lewat proxy & langsung
+      const proxyUrl  = tv(hlsStream.stream_url);
+      const directUrl = API_BASE + hlsStream.stream_url;
+
+      // Coba proxy dulu, fallback ke direct (beberapa HLS stream tidak perlu auth header)
+      if (video) {
+        await tryHls(proxyUrl, video, async () => {
+          destroyHls();
+          await tryHls(directUrl, video, () => {
+            showError("HLS stream tidak dapat diputar. Coba channel lain.");
+          });
+        });
       }
     } else if (dashStream) {
+      if (!video) return;
       try {
         const res  = await fetch(tv(dashStream.stream_url));
         const info = await res.json();
+        if (info.error) { showError("DASH stream offline"); return; }
         const shaka = (await import("shaka-player")).default;
         shaka.polyfill.installAll();
+        if (!shaka.Player.isBrowserSupported()) { showError("Browser tidak mendukung DASH"); return; }
         const player = new shaka.Player(video);
+        player.addEventListener("error", () => showError("DASH error"));
         await player.load(API_BASE + info.stream_url);
-      } catch { setPlayerError(true); }
-    } else if (!streams.find((s) => s.stream_type === "embed")) {
-      setPlayerError(true);
+        video.play().catch(() => {});
+      } catch { showError("DASH gagal dimuat"); }
+    } else if (embedStream) {
+      // embed ditangani oleh iframe — tidak perlu video element
+    } else {
+      showError("Tidak ada stream tersedia untuk channel ini");
     }
   }, [loadEpg]);
 
+  // Auto-play channel pertama
   useEffect(() => {
     if (filtered.length > 0 && !didAutoPlay.current) {
       didAutoPlay.current = true;
@@ -110,30 +174,39 @@ export default function TVPage() {
   }, [filtered, playChannel]);
 
   const embedStream = activeChannel?.streams?.find((s) => s.stream_type === "embed");
-  const isEmbed     = !!embedStream && !activeChannel?.streams?.find((s) => s.stream_type === "hls");
+  const hlsStream   = activeChannel?.streams?.find((s) => s.stream_type === "hls");
+  const isEmbed     = !!embedStream && !hlsStream;
 
+  // ── Render ────────────────────────────────────────────────────
   return (
     <div style={s.root}>
+      {/* NAV */}
       <nav style={s.nav}>
         <div style={s.navLeft}>
           <a href="/" style={s.navLogo}><span style={{ color: "#e50914" }}>●</span> NONTON</a>
           <a href="/" style={s.navLink}>Drama</a>
-          <a href="/tv" style={{ ...s.navLink, color: "#fff", borderBottom: "2px solid #e50914", paddingBottom: 2 }}>📺 Live TV</a>
+          <a href="/tv" style={{ ...s.navLink, color: "#fff", borderBottom: "2px solid #e50914", paddingBottom: 2 }}>
+            📺 Live TV
+          </a>
         </div>
         <input value={search} onChange={(e) => setSearch(e.target.value)}
           placeholder="Cari channel..." style={s.searchInput} />
       </nav>
 
+      {/* CATEGORY */}
       <div style={s.catBar}>
         {CATEGORIES.map((c) => (
-          <button key={c} onClick={() => { setCategory(c); didAutoPlay.current = false; }}
+          <button key={c}
+            onClick={() => { setCategory(c); didAutoPlay.current = false; setActiveChannel(null); }}
             style={{ ...s.catBtn, background: category === c ? "#e50914" : "#1a1a1a", border: category === c ? "none" : "1px solid #333" }}>
-            {CATEGORY_LABELS[c]}
+            {CAT_LABELS[c]}
           </button>
         ))}
       </div>
 
+      {/* LAYOUT */}
       <div style={s.layout}>
+        {/* SIDEBAR */}
         <aside style={{ ...s.sidebar, width: sidebarOpen ? 260 : 0, minWidth: sidebarOpen ? 260 : 0 }}>
           <div style={s.sidebarInner}>
             <div style={s.sidebarHeader}>
@@ -164,6 +237,7 @@ export default function TVPage() {
           </div>
         </aside>
 
+        {/* PLAYER */}
         <main style={s.playerArea}>
           <button onClick={() => setSidebarOpen((v) => !v)} style={s.toggleBtn}>
             {sidebarOpen ? "◀" : "▶"}
@@ -189,26 +263,42 @@ export default function TVPage() {
                   : playerError
                     ? <div style={s.errorBox}>
                         <div style={{ fontSize: 48 }}>📡</div>
-                        <p style={{ color: "#fff", marginTop: 12 }}>Stream tidak tersedia saat ini</p>
-                        <p style={{ color: "#666", fontSize: 13, marginTop: 4 }}>Coba channel lain atau klik Coba Lagi</p>
-                        <button onClick={() => playChannel(activeChannel)} style={s.retryBtn}>🔄 Coba Lagi</button>
+                        <p style={{ color: "#fff", marginTop: 12 }}>Stream tidak tersedia</p>
+                        <p style={{ color: "#666", fontSize: 13, marginTop: 6 }}>{playerMsg}</p>
+                        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+                          <button onClick={() => playChannel(activeChannel)} style={s.retryBtn}>🔄 Coba Lagi</button>
+                          <button onClick={() => {
+                            const idx = filtered.findIndex((c) => c.id === activeChannel.id);
+                            const next = filtered[idx + 1] || filtered[idx - 1];
+                            if (next) playChannel(next);
+                          }} style={s.nextBtn}>⏭ Channel Lain</button>
+                        </div>
                       </div>
-                    : <video ref={videoRef} controls autoPlay playsInline style={s.video} onError={() => setPlayerError(true)} />
+                    : <video ref={videoRef} controls autoPlay playsInline style={s.video}
+                        onError={() => { setPlayerError(true); setPlayerMsg("Video gagal dimuat oleh browser"); }} />
                 }
               </div>
 
+              {/* EPG */}
               <div style={s.epgSection}>
-                <h3 style={s.epgTitle}>📅 Jadwal Tayang</h3>
+                <h3 style={s.epgTitle}>📅 Jadwal Tayang Hari Ini</h3>
                 {epgLoading
-                  ? <p style={{ color: "#666", fontSize: 13 }}>Memuat jadwal...</p>
-                  : epg
+                  ? <div style={s.epgSkeleton}>
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <div key={i} style={s.epgSkeletonItem}>
+                          <div style={{ ...s.skeletonThumb, width: 50, height: 14, borderRadius: 4 }} />
+                          <div style={{ ...s.skeletonText, height: 14 }} />
+                        </div>
+                      ))}
+                    </div>
+                  : epg && (Array.isArray(epg) ? epg : epg.schedule || []).length > 0
                     ? <div style={s.epgList}>
                         {(Array.isArray(epg) ? epg : epg.schedule || []).map((item, i) => {
                           const isNow = item.is_now || item.status === "now";
                           return (
-                            <div key={i} style={{ ...s.epgItem, background: isNow ? "#1e0000" : "#111", borderLeft: isNow ? "3px solid #e50914" : "3px solid transparent" }}>
-                              <span style={s.epgTime}>{item.start_time || item.time || ""}</span>
-                              <span style={{ ...s.epgName, color: isNow ? "#fff" : "#aaa", fontWeight: isNow ? 600 : 400 }}>
+                            <div key={i} style={{ ...s.epgItem, background: isNow ? "#1e0000" : "#0f0f0f", borderLeft: isNow ? "3px solid #e50914" : "3px solid transparent" }}>
+                              <span style={s.epgTime}>{item.start_time || item.time || "—"}</span>
+                              <span style={{ ...s.epgName, color: isNow ? "#fff" : "#999", fontWeight: isNow ? 600 : 400 }}>
                                 {item.title || item.name || "—"}
                               </span>
                               {isNow && <span style={s.nowBadge}>Sekarang</span>}
@@ -216,7 +306,7 @@ export default function TVPage() {
                           );
                         })}
                       </div>
-                    : <p style={{ color: "#444", fontSize: 13 }}>Jadwal tidak tersedia</p>
+                    : <p style={{ color: "#444", fontSize: 13 }}>Jadwal tidak tersedia untuk channel ini</p>
                 }
               </div>
             </>
@@ -231,7 +321,8 @@ export default function TVPage() {
 
       <style>{`
         *{box-sizing:border-box;margin:0;padding:0;}
-        ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:#0a0a0a;}
+        ::-webkit-scrollbar{width:4px;}
+        ::-webkit-scrollbar-track{background:#0a0a0a;}
         ::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px;}
         ::-webkit-scrollbar-thumb:hover{background:#e50914;}
         @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
@@ -274,13 +365,16 @@ const s = {
   video:{width:"100%",height:"100%",display:"block",background:"#000"},
   iframe:{width:"100%",height:"100%",border:"none"},
   errorBox:{width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#0a0a0a"},
-  retryBtn:{marginTop:14,background:"#e50914",color:"#fff",border:"none",padding:"8px 20px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:600},
+  retryBtn:{background:"#e50914",color:"#fff",border:"none",padding:"8px 18px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:600},
+  nextBtn:{background:"#222",color:"#fff",border:"1px solid #444",padding:"8px 18px",borderRadius:8,cursor:"pointer",fontSize:13},
   epgSection:{padding:"16px 20px"},
   epgTitle:{fontSize:15,fontWeight:600,marginBottom:12},
-  epgList:{display:"flex",flexDirection:"column",gap:4,maxHeight:280,overflowY:"auto"},
+  epgList:{display:"flex",flexDirection:"column",gap:3,maxHeight:280,overflowY:"auto"},
   epgItem:{display:"flex",alignItems:"center",gap:12,padding:"8px 12px",borderRadius:6},
   epgTime:{fontSize:12,color:"#e50914",fontWeight:600,minWidth:50},
   epgName:{flex:1,fontSize:13},
   nowBadge:{fontSize:10,background:"#e50914",color:"#fff",padding:"2px 6px",borderRadius:4,fontWeight:700},
+  epgSkeleton:{display:"flex",flexDirection:"column",gap:8},
+  epgSkeletonItem:{display:"flex",alignItems:"center",gap:12,padding:"4px 0"},
   empty:{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"},
 };
