@@ -5,17 +5,24 @@ import { useEffect, useState, useRef, useCallback } from "react";
 const KEY  = "ztatv_8ef9a9b28e724cbbd87f068510228c4fd54e3925";
 const BASE = "https://api.nexoratv.qzz.io/api";
 
-// JSON API (channel list, EPG, DASH info) → lewat proxy lokal agar tidak CORS
+// JSON API lewat proxy (channel list, EPG, DASH info)
 const proxyFetch = (path, params = {}) => {
   const qs = new URLSearchParams({ path, ...params }).toString();
   return fetch(`/api/tv?${qs}`);
 };
 
-const CATEGORIES = ["Semua", "nasional", "berita", "olahraga", "anak", "religi", "hiburan"];
+const CATEGORIES = ["Semua", "nasional", "berita", "olahraga", "anak", "religi", "hiburan", "movies"];
 const CAT_LABELS = {
   Semua:"🌐 Semua", nasional:"📺 Nasional", berita:"📰 Berita",
-  olahraga:"⚽ Olahraga", anak:"🧒 Anak", religi:"🕌 Religi", hiburan:"🎬 Hiburan",
+  olahraga:"⚽ Olahraga", anak:"🧒 Anak", religi:"🕌 Religi",
+  hiburan:"🎬 Hiburan", movies:"🎥 Movies",
 };
+
+// Ambil stream terbaik berdasarkan priority (terkecil = terbaik)
+const getBestStream = (streams, type) =>
+  streams
+    .filter(s => s.stream_type === type)
+    .sort((a, b) => a.priority - b.priority)[0] || null;
 
 export default function TVPage() {
   const [channels, setChannels]           = useState([]);
@@ -26,7 +33,7 @@ export default function TVPage() {
   const [activeChannel, setActiveChannel] = useState(null);
   const [epg, setEpg]                     = useState(null);
   const [epgLoading, setEpgLoading]       = useState(false);
-  const [playerError, setPlayerError]     = useState(false);
+  const [playerState, setPlayerState]     = useState("idle"); // idle | loading | playing | error
   const [playerMsg, setPlayerMsg]         = useState("");
   const [sidebarOpen, setSidebarOpen]     = useState(true);
   const videoRef    = useRef(null);
@@ -34,14 +41,16 @@ export default function TVPage() {
   const shakaRef    = useRef(null);
   const didAutoPlay = useRef(false);
 
-  // ── Load channels (via proxy) ─────────────────────────────────
+  // ── Load channels ─────────────────────────────────────────────
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
         const params = category !== "Semua" ? { category } : {};
         const json   = await proxyFetch("/v1/channels", params).then(r => r.json());
-        setChannels(json.data || []);
+        // Urutkan: channel aktif dulu, lalu berdasarkan nama
+        const sorted = (json.data || []).sort((a, b) => b.is_active - a.is_active);
+        setChannels(sorted);
       } catch (e) { console.error("channels:", e); }
       finally { setLoading(false); }
     };
@@ -54,9 +63,10 @@ export default function TVPage() {
     );
   }, [search, channels]);
 
-  // ── EPG (via proxy) ───────────────────────────────────────────
+  // ── EPG ───────────────────────────────────────────────────────
   const loadEpg = useCallback(async (channel) => {
     setEpgLoading(true); setEpg(null);
+    // Coba dengan slug dulu, lalu id
     for (const id of [channel.slug, channel.id].filter(Boolean)) {
       try {
         const res  = await proxyFetch(`/v1/epg/${id}`);
@@ -69,59 +79,85 @@ export default function TVPage() {
     setEpgLoading(false);
   }, []);
 
-  // ── Cleanup ───────────────────────────────────────────────────
-  const cleanupPlayer = () => {
+  // ── Cleanup player ────────────────────────────────────────────
+  const cleanupPlayer = useCallback(() => {
     if (hlsRef.current)   { hlsRef.current.destroy();  hlsRef.current  = null; }
     if (shakaRef.current) { shakaRef.current.destroy(); shakaRef.current = null; }
     if (videoRef.current) videoRef.current.src = "";
-  };
+  }, []);
 
-  // ── Play DASH (via proxy untuk dapat info, shaka untuk load) ──
-  const playDash = async (dashStream, video, showError) => {
-    try {
-      // Fetch info DASH lewat proxy (perlu x-api-key)
-      const info = await proxyFetch(dashStream.stream_url).then(r => r.json());
-      if (!info?.stream_url) { showError("DASH: manifest tidak ditemukan"); return; }
+  // ── Play DASH stream ──────────────────────────────────────────
+  const playDash = useCallback(async (streams, video, onFail) => {
+    // Ambil semua DASH streams urut priority, coba satu per satu
+    const dashStreams = streams
+      .filter(s => s.stream_type === "dash")
+      .sort((a, b) => a.priority - b.priority);
 
-      const shaka = (await import("shaka-player")).default;
-      shaka.polyfill.installAll();
-      if (!shaka.Player.isBrowserSupported()) { showError("Browser tidak mendukung DASH"); return; }
+    for (const stream of dashStreams) {
+      try {
+        setPlayerMsg(`Mencoba ${stream.server_name}...`);
 
-      const player = new shaka.Player(video);
-      shakaRef.current = player;
+        // Fetch info manifest dari proxy (perlu x-api-key)
+        const res = await proxyFetch(stream.stream_url);
+        if (!res.ok) continue;
 
-      // Handle DRM ClearKey jika ada (sesuai panduan resmi)
-      if (info.drm_key) {
-        const [kid, key] = info.drm_key.split(":");
-        player.configure({ drm: { clearKeys: { [kid]: key } } });
+        const info = await res.json();
+        if (!info?.stream_url) continue;
+
+        const shaka = (await import("shaka-player")).default;
+        shaka.polyfill.installAll();
+        if (!shaka.Player.isBrowserSupported()) { onFail("Browser tidak mendukung DASH"); return; }
+
+        // Destroy shaka lama jika ada
+        if (shakaRef.current) { await shakaRef.current.destroy(); shakaRef.current = null; }
+
+        const player = new shaka.Player(video);
+        shakaRef.current = player;
+
+        // DRM ClearKey jika ada
+        if (info.drm_key) {
+          const [kid, key] = info.drm_key.split(":");
+          player.configure({ drm: { clearKeys: { [kid]: key } } });
+        }
+
+        let failed = false;
+        player.addEventListener("error", () => { failed = true; });
+
+        await player.load(BASE + info.stream_url);
+
+        if (!failed) {
+          video.play().catch(() => {});
+          setPlayerState("playing");
+          setPlayerMsg("");
+          return; // sukses!
+        }
+
+        // Gagal, coba stream berikutnya
+        await player.destroy(); shakaRef.current = null;
+      } catch (e) {
+        console.warn(`Stream ${stream.server_name} gagal:`, e.message);
       }
+    }
 
-      player.addEventListener("error", e => {
-        console.error("Shaka:", e.detail);
-        showError("DASH gagal diputar");
-      });
-
-      await player.load(BASE + info.stream_url);
-      video.play().catch(() => {});
-    } catch (e) { showError("DASH error: " + e.message); }
-  };
+    // Semua DASH gagal
+    onFail("Semua server DASH tidak tersedia saat ini");
+  }, []);
 
   // ── Play channel ──────────────────────────────────────────────
   const playChannel = useCallback(async (channel) => {
     setActiveChannel(channel);
-    setPlayerError(false);
-    setPlayerMsg("");
+    setPlayerState("loading");
+    setPlayerMsg("Memuat stream...");
     loadEpg(channel);
     cleanupPlayer();
 
-    const streams   = channel.streams || [];
-    const hlsStream = streams.find(s => s.stream_type === "hls");
-    const dashStream= streams.find(s => s.stream_type === "dash");
-    const video     = videoRef.current;
-    const showError = (msg) => { setPlayerError(true); setPlayerMsg(msg || ""); };
+    const streams    = channel.streams || [];
+    const hlsStream  = getBestStream(streams, "hls");
+    const video      = videoRef.current;
 
-    // ── HLS: langsung ke BASE + stream_url, API key via xhrSetup ──
-    // Ini sesuai panduan resmi — hls.js handle CORS via header
+    const onFail = (msg) => { setPlayerState("error"); setPlayerMsg(msg); };
+
+    // ── HLS (jika ada) — langsung dengan xhrSetup ──────────────
     if (hlsStream && video) {
       const streamUrl = BASE + hlsStream.stream_url;
 
@@ -130,39 +166,47 @@ export default function TVPage() {
 
       if (Hls.isSupported()) {
         const hls = new Hls({
-          // ✅ Sesuai panduan resmi: kirim API key via xhrSetup
           xhrSetup: (xhr) => xhr.setRequestHeader("x-api-key", KEY),
           maxBufferLength: 30,
-          enableWorker: true,
         });
         hls.loadSource(streamUrl);
         hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          setPlayerState("playing"); setPlayerMsg("");
+          video.play().catch(() => {});
+        });
         hls.on(Hls.Events.ERROR, (_, data) => {
           if (data.fatal) {
-            console.error("HLS fatal:", data.details);
             hls.destroy(); hlsRef.current = null;
-            if (dashStream) playDash(dashStream, video, showError);
-            else showError("Stream HLS tidak dapat diputar");
+            // Fallback ke DASH
+            playDash(streams, video, onFail);
           }
         });
         hlsRef.current = hls;
 
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        // Safari native HLS
         video.src = streamUrl;
         video.play().catch(() => {});
+        setPlayerState("playing"); setPlayerMsg("");
       } else {
-        showError("Browser tidak mendukung HLS");
+        // Tidak support HLS, langsung coba DASH
+        playDash(streams, video, onFail);
       }
 
-    } else if (dashStream && video) {
-      playDash(dashStream, video, showError);
-    } else if (!streams.find(s => s.stream_type === "embed")) {
-      showError("Tidak ada stream untuk channel ini");
-    }
-  }, [loadEpg]);
+    // ── DASH (mayoritas channel) ────────────────────────────────
+    } else if (streams.some(s => s.stream_type === "dash") && video) {
+      await playDash(streams, video, onFail);
 
+    // ── Embed ───────────────────────────────────────────────────
+    } else if (streams.some(s => s.stream_type === "embed")) {
+      setPlayerState("playing"); setPlayerMsg("");
+
+    } else {
+      onFail("Tidak ada stream untuk channel ini");
+    }
+  }, [loadEpg, cleanupPlayer, playDash]);
+
+  // Auto-play channel pertama
   useEffect(() => {
     if (filtered.length > 0 && !didAutoPlay.current) {
       didAutoPlay.current = true;
@@ -176,6 +220,7 @@ export default function TVPage() {
 
   return (
     <div style={s.root}>
+      {/* NAV */}
       <nav style={s.nav}>
         <div style={s.navLeft}>
           <a href="/" style={s.navLogo}><span style={{color:"#e50914"}}>●</span> NONTON</a>
@@ -186,17 +231,20 @@ export default function TVPage() {
           placeholder="Cari channel..." style={s.searchInput}/>
       </nav>
 
+      {/* CATEGORIES */}
       <div style={s.catBar}>
         {CATEGORIES.map(c=>(
           <button key={c}
-            onClick={()=>{ setCategory(c); didAutoPlay.current=false; setActiveChannel(null); cleanupPlayer(); }}
+            onClick={()=>{ setCategory(c); didAutoPlay.current=false; setActiveChannel(null); cleanupPlayer(); setPlayerState("idle"); }}
             style={{...s.catBtn, background:category===c?"#e50914":"#1a1a1a", border:category===c?"none":"1px solid #333"}}>
             {CAT_LABELS[c]}
           </button>
         ))}
       </div>
 
+      {/* LAYOUT */}
       <div style={s.layout}>
+        {/* SIDEBAR */}
         <aside style={{...s.sidebar, width:sidebarOpen?260:0, minWidth:sidebarOpen?260:0}}>
           <div style={s.sidebarInner}>
             <div style={s.sidebarHeader}>
@@ -210,15 +258,21 @@ export default function TVPage() {
                 ))
               : filtered.map(ch=>{
                   const isActive = activeChannel?.id===ch.id;
+                  // Deteksi stream type untuk badge
+                  const hasHls  = ch.streams?.some(s=>s.stream_type==="hls");
+                  const hasDash = ch.streams?.some(s=>s.stream_type==="dash");
                   return (
-                    <div key={ch.id||ch.slug} onClick={()=>playChannel(ch)}
-                      style={{...s.channelItem, background:isActive?"#1e0000":"transparent", borderLeft:isActive?"3px solid #e50914":"3px solid transparent"}}>
-                      {ch.logo
-                        ? <img src={ch.logo} alt={ch.name} style={s.channelLogo} onError={e=>(e.target.style.display="none")}/>
+                    <div key={ch.id} onClick={()=>playChannel(ch)}
+                      style={{...s.channelItem, background:isActive?"#1e0000":"transparent", borderLeft:isActive?"3px solid #e50914":"3px solid transparent", opacity:ch.is_active?1:0.4}}>
+                      {ch.logo_url
+                        ? <img src={ch.logo_url} alt={ch.name} style={s.channelLogo} onError={e=>(e.target.style.display="none")}/>
                         : <div style={s.channelLogoFallback}>📺</div>}
                       <div style={s.channelInfo}>
                         <div style={s.channelName}>{ch.name}</div>
-                        <div style={s.channelCat}>{ch.category||""}</div>
+                        <div style={{display:"flex",gap:4,marginTop:3}}>
+                          {hasHls  && <span style={{...s.typeBadge, background:"#1a6b1a"}}>HLS</span>}
+                          {hasDash && <span style={{...s.typeBadge, background:"#1a3a6b"}}>DASH</span>}
+                        </div>
                       </div>
                       {isActive && <span style={s.liveBadge}>LIVE</span>}
                     </div>
@@ -228,6 +282,7 @@ export default function TVPage() {
           </div>
         </aside>
 
+        {/* PLAYER AREA */}
         <main style={s.playerArea}>
           <button onClick={()=>setSidebarOpen(v=>!v)} style={s.toggleBtn}>
             {sidebarOpen?"◀":"▶"}
@@ -235,9 +290,10 @@ export default function TVPage() {
 
           {activeChannel ? (
             <>
+              {/* Channel header */}
               <div style={s.channelHeader}>
-                {activeChannel.logo && (
-                  <img src={activeChannel.logo} alt={activeChannel.name} style={s.headerLogo}
+                {activeChannel.logo_url && (
+                  <img src={activeChannel.logo_url} alt={activeChannel.name} style={s.headerLogo}
                     onError={e=>(e.target.style.display="none")}/>
                 )}
                 <div>
@@ -247,14 +303,15 @@ export default function TVPage() {
                 </div>
               </div>
 
+              {/* Player */}
               <div style={s.videoWrap}>
-                {isEmbed
+                {isEmbed && playerState !== "error"
                   ? <iframe src={embedStream.embed_url} style={s.iframe} allowFullScreen allow="autoplay;encrypted-media"/>
-                  : playerError
+                  : playerState === "error"
                     ? <div style={s.errorBox}>
                         <div style={{fontSize:48}}>📡</div>
                         <p style={{color:"#fff",marginTop:12,fontWeight:600}}>Stream tidak tersedia</p>
-                        {playerMsg && <p style={{color:"#666",fontSize:13,marginTop:6,textAlign:"center",maxWidth:320}}>{playerMsg}</p>}
+                        {playerMsg && <p style={{color:"#888",fontSize:13,marginTop:6,textAlign:"center",maxWidth:320}}>{playerMsg}</p>}
                         <div style={{display:"flex",gap:10,marginTop:16}}>
                           <button onClick={()=>playChannel(activeChannel)} style={s.retryBtn}>🔄 Coba Lagi</button>
                           <button onClick={()=>{
@@ -264,16 +321,26 @@ export default function TVPage() {
                           }} style={s.nextBtn}>⏭ Channel Lain</button>
                         </div>
                       </div>
-                    : <video ref={videoRef} controls autoPlay playsInline style={s.video}
-                        onError={()=>{setPlayerError(true);setPlayerMsg("Video gagal dimuat");}}/>
+                    : <div style={{position:"relative",width:"100%",height:"100%"}}>
+                        {playerState === "loading" && (
+                          <div style={s.loadingOverlay}>
+                            <div style={s.spinner}/>
+                            <p style={{color:"#aaa",marginTop:12,fontSize:13}}>{playerMsg}</p>
+                          </div>
+                        )}
+                        <video ref={videoRef} controls autoPlay playsInline style={s.video}
+                          onError={()=>{setPlayerState("error");setPlayerMsg("Video gagal dimuat");}}
+                          onPlaying={()=>setPlayerState("playing")}/>
+                      </div>
                 }
               </div>
 
+              {/* EPG */}
               <div style={s.epgSection}>
                 <h3 style={s.epgTitle}>📅 Jadwal Tayang Hari Ini</h3>
                 {epgLoading
                   ? <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                      {Array.from({length:5}).map((_,i)=>(
+                      {Array.from({length:4}).map((_,i)=>(
                         <div key={i} style={{display:"flex",gap:12,alignItems:"center"}}>
                           <div style={{width:50,height:14,borderRadius:4,background:"#1a1a1a"}}/>
                           <div style={{flex:1,height:14,borderRadius:4,background:"#1a1a1a"}}/>
@@ -315,6 +382,7 @@ export default function TVPage() {
         ::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px;}
         ::-webkit-scrollbar-thumb:hover{background:#e50914;}
         @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+        @keyframes spin{to{transform:rotate(360deg)}}
       `}</style>
     </div>
   );
@@ -338,8 +406,8 @@ const s = {
   channelLogoFallback:{width:36,height:36,background:"#1a1a1a",borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0},
   channelInfo:{flex:1,minWidth:0},
   channelName:{fontSize:13,fontWeight:500,color:"#ddd",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},
-  channelCat:{fontSize:11,color:"#555",marginTop:2},
-  liveBadge:{background:"#e50914",color:"#fff",fontSize:9,fontWeight:700,padding:"2px 5px",borderRadius:3,letterSpacing:0.5},
+  typeBadge:{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3,color:"#fff"},
+  liveBadge:{background:"#e50914",color:"#fff",fontSize:9,fontWeight:700,padding:"2px 5px",borderRadius:3,letterSpacing:0.5,flexShrink:0},
   skeletonItem:{display:"flex",alignItems:"center",gap:10,padding:"10px 12px"},
   skeletonThumb:{width:36,height:36,borderRadius:6,background:"linear-gradient(90deg,#1a1a1a 25%,#2a2a2a 50%,#1a1a1a 75%)",backgroundSize:"200% 100%",animation:"shimmer 1.5s infinite",flexShrink:0},
   skeletonText:{flex:1,height:12,borderRadius:4,background:"#1a1a1a"},
@@ -350,9 +418,11 @@ const s = {
   channelTitle:{fontSize:18,fontWeight:700,marginBottom:4},
   liveTag:{fontSize:12,color:"#e50914",fontWeight:700,marginRight:8},
   categoryTag:{fontSize:11,color:"#888",background:"#1a1a1a",padding:"2px 8px",borderRadius:10},
-  videoWrap:{width:"100%",background:"#000",aspectRatio:"16/9",maxHeight:"55vh"},
+  videoWrap:{width:"100%",background:"#000",aspectRatio:"16/9",maxHeight:"55vh",position:"relative"},
   video:{width:"100%",height:"100%",display:"block",background:"#000"},
   iframe:{width:"100%",height:"100%",border:"none"},
+  loadingOverlay:{position:"absolute",inset:0,background:"#000",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:5},
+  spinner:{width:40,height:40,border:"3px solid #333",borderTop:"3px solid #e50914",borderRadius:"50%",animation:"spin 0.8s linear infinite"},
   errorBox:{width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#0a0a0a"},
   retryBtn:{background:"#e50914",color:"#fff",border:"none",padding:"8px 18px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:600},
   nextBtn:{background:"#222",color:"#fff",border:"1px solid #444",padding:"8px 18px",borderRadius:8,cursor:"pointer",fontSize:13},
